@@ -1,0 +1,14 @@
+{
+  "name": "emberfall-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "EMBERFALL netplay relay server — room-based WebSocket relay for online co-op",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

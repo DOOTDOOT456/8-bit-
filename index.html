@@ -134,6 +134,28 @@
     </div>
   </div>
 
+  <!-- Netplay -->
+  <div id="net-screen">
+    <div class="panel" style="width:min(520px,92vw)">
+      <h2>🌐 Online Co-op</h2>
+      <p class="muted">Play with a friend on a different computer. One player hosts and shares the room code; the other joins. The host's world is the real one — you both fight the same monsters.</p>
+      <div style="margin:16px 0">
+        <button class="btn primary" id="btn-net-host" style="width:100%">🌍 Host a World</button>
+        <p id="net-status" style="margin:10px 0;text-align:center">Not connected</p>
+        <p style="text-align:center;font-size:22px;color:var(--gold);letter-spacing:6px" id="net-code"></p>
+      </div>
+      <div style="margin:16px 0;border-top:1px solid var(--border);padding-top:14px">
+        <label class="muted small" for="join-code">Have a code? Join a world:</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input id="join-code" maxlength="4" placeholder="CODE" style="flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:18px;padding:8px;text-transform:uppercase;letter-spacing:4px;text-align:center">
+          <button class="btn" id="btn-net-join">Join →</button>
+        </div>
+      </div>
+      <p class="muted small" style="margin-top:12px">Relay server: start <b>server/</b> with <b>npm install && npm start</b> (port 8787). Override with ?server=ws://host:port in the URL.</p>
+      <div style="text-align:right;margin-top:12px"><button class="btn" id="net-close">Back</button></div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
   <script type="module" src="/src/main.js"></script>

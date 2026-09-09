@@ -53,6 +53,14 @@ export class Game {
     this.depth = 1; // chapter depth: 1-3 story, 4+ endless
     this.multiplayer = false;
     this.p2 = null;
+    // netplay
+    this.netMode = null; // null | "host" | "client"
+    this.netSendState = null;
+    this.netSendInput = null;
+    this.remoteInput = null;
+    this.remoteSeen = 0;
+    this.netBoss = null;
+    this.netP2 = null;
   }
 
   startChapter(chapter) {
@@ -135,12 +143,21 @@ export class Game {
   updateP2() {
     const p2 = this.p2;
     if (!p2 || !this.multiplayer) return;
-    const k = this.keys;
     let dx = 0, dy = 0;
-    if (k.KeyJ) dx -= 1;
-    if (k.KeyL) dx += 1;
-    if (k.KeyI) dy -= 1;
-    if (k.KeyK) dy += 1;
+    if (this.netMode === "host" && this.remoteInput) {
+      // remote player controls P2 via network
+      const rk = this.remoteInput.keys;
+      if (rk.left) dx -= 1;
+      if (rk.right) dx += 1;
+      if (rk.up) dy -= 1;
+      if (rk.down) dy += 1;
+    } else {
+      const k = this.keys;
+      if (k.KeyJ) dx -= 1;
+      if (k.KeyL) dx += 1;
+      if (k.KeyI) dy -= 1;
+      if (k.KeyK) dy += 1;
+    }
     const len = Math.hypot(dx, dy);
     if (len > 0) {
       dx /= len; dy /= len;
@@ -159,6 +176,20 @@ export class Game {
     if (this.boss?.active) {
       const d = Math.hypot(this.boss.x - p2.x, this.boss.y - p2.y);
       if (d < nd) { nd = d; nearest = this.boss; }
+    }
+    if (this.netMode === "host" && this.remoteInput?.aim && this.frame - this.remoteSeen < 30) {
+      // remote player aims via their mouse
+      const aim = this.remoteInput.aim;
+      const dAim = Math.hypot(aim.x - p2.x, aim.y - p2.y);
+      if (nearest && dAim < 400 && p2.attackCd <= 0) {
+        p2.attackCd = p2.attackCdMax;
+        const ang = Math.atan2(aim.y - p2.y, aim.x - p2.x);
+        p2.facing = ang;
+        const dmg = p2.baseDamage + (this.prestige?.damage ?? 0);
+        this.projectiles.push({ x: p2.x, y: p2.y, vx: Math.cos(ang) * 6, vy: Math.sin(ang) * 6, dmg, friendly: true, life: 90, color: "#e090c0", r: 4 });
+      }
+      if (p2.hp <= 0) { p2.hp = p2.maxHp * 0.5; p2.x = this.player.x + 30; p2.y = this.player.y; }
+      return;
     }
     if (nearest && p2.attackCd <= 0) {
       p2.attackCd = p2.attackCdMax;
@@ -243,9 +274,77 @@ export class Game {
   loop() {
     if (!this.running) return;
     this.frame++;
-    if (!this.pauseFlag && !this.state.uiOpen) this.update();
+    if (this.netMode === "client") {
+      // Client: no simulation — just capture input for the host
+      this.captureClientInput();
+    } else if (!this.pauseFlag && !this.state.uiOpen) {
+      this.update();
+      // Host: broadcast snapshot every 3 frames (~20/s)
+      if (this.netMode === "host" && this.frame % 3 === 0 && this.netSendState) {
+        this.netSendState(this.snapshot());
+      }
+    }
     this.render();
     requestAnimationFrame(this.loop);
+  }
+
+  // ------------- netplay support -------------
+  captureClientInput() {
+    if (!this.netSendInput) return;
+    const k = this.keys;
+    const keys = {
+      up: !!(k.KeyW || k.ArrowUp || k.KeyI),
+      down: !!(k.KeyS || k.ArrowDown || k.KeyK),
+      left: !!(k.KeyA || k.ArrowLeft || k.KeyJ),
+      right: !!(k.KeyD || k.ArrowRight || k.KeyL),
+      ability: !!k.KeyF,
+    };
+    // aim at mouse world pos relative to snapshot cam
+    this.netSendInput({ keys, aim: { x: this.mouse.x + this.cam.x, y: this.mouse.y + this.cam.y } });
+  }
+
+  snapshot() {
+    const p = this.player;
+    return {
+      p: { x: Math.round(p.x), y: Math.round(p.y), hp: Math.round(p.hp), maxHp: p.maxHp, cls: p.cls, facing: p.facing, lvl: p.level, inv: p.invuln > 0 },
+      p2: this.multiplayer && this.p2 ? { x: Math.round(this.p2.x), y: Math.round(this.p2.y), hp: Math.round(this.p2.hp), maxHp: this.p2.maxHp, cls: this.p2.cls } : null,
+      cam: { x: Math.round(this.cam.x), y: Math.round(this.cam.y) },
+      en: this.enemies.map(e => ({ x: Math.round(e.x), y: Math.round(e.y), t: e.type, hp: e.hp, mh: e.maxHp })),
+      bo: this.boss && this.boss.active ? { x: Math.round(this.boss.x), y: Math.round(this.boss.y), id: this.boss.id, hp: this.boss.hp, mh: this.boss.maxHp, name: this.boss.name, ph: this.boss.phase } : null,
+      pk: this.pickups.map(pk => ({ x: Math.round(pk.x), y: Math.round(pk.y), i: pk.item })),
+      pr: this.projectiles.map(pr => ({ x: Math.round(pr.x), y: Math.round(pr.y), c: pr.color, r: pr.r })),
+      tod: this.timeOfDay,
+    };
+  }
+
+  applySnapshot(s) {
+    if (!this.map || !this.player) return;
+    const p = this.player;
+    p.x = s.p.x; p.y = s.p.y; p.hp = s.p.hp; p.maxHp = s.p.maxHp; p.facing = s.p.facing;
+    p.level = s.p.lvl;
+    this.cam.x = s.cam.x; this.cam.y = s.cam.y;
+    this.enemies = s.en.map(e => ({
+      type: e.t, x: e.x, y: e.y, hp: e.hp, maxHp: e.mh,
+      r: ENEMY_TYPES[e.t]?.r ?? 10, color: ENEMY_TYPES[e.t]?.color ?? "#f0f",
+    }));
+    this.netBoss = s.bo ? { x: s.bo.x, y: s.bo.y, id: s.bo.id, hp: s.bo.hp, maxHp: s.bo.mh, name: s.bo.name, phase: s.bo.ph } : null;
+    if (s.bo && !s.bo.name) this.netBoss = null;
+    this.pickups = (s.pk || []).map(pk => ({ x: pk.x, y: pk.y, item: pk.i, t: 0 }));
+    this.projectiles = (s.pr || []).map(pr => ({ x: pr.x, y: pr.y, color: pr.c, r: pr.r, vx: 0, vy: 0, life: 2, friendly: true }));
+    this.timeOfDay = s.tod;
+    this.netP2 = s.p2;
+  }
+
+  // Client-mode host-input application: host applies client movement
+  applyRemoteInput(id, keys, aim) {
+    if (this.netMode !== "host") return;
+    // Remote player controls P2
+    if (!this.multiplayer) {
+      this.multiplayer = true;
+      this.initPlayer2("ranger");
+    }
+    this.remoteInput = { keys, aim };
+    this.remoteSeen = this.frame;
   }
 
   update() {
@@ -765,8 +864,15 @@ export class Game {
       }
     }
 
-    // boss
-    if (this.boss) this.renderBoss(ctx);
+    // boss (client mode renders host's snapshot)
+    if (this.netMode === "client") {
+      if (this.netBoss) {
+        const b = this.netBoss;
+        const sx = b.x - this.cam.x, sy = b.y - this.cam.y;
+        ctx.fillStyle = BOSSES[b.id]?.color ?? "#f0f";
+        ctx.beginPath(); ctx.arc(sx, sy, BOSSES[b.id]?.r ?? 22, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (this.boss) this.renderBoss(ctx);
 
     // projectiles
     for (const pr of this.projectiles) {
@@ -785,8 +891,15 @@ export class Game {
       ctx.globalAlpha = 1;
     }
 
-    // player 2 (co-op)
-    if (this.multiplayer && this.p2) {
+    // player 2 — client mode: render host's P2/remote-hero from snapshot
+    if (this.netMode === "client" && this.netP2) {
+      const p2 = this.netP2;
+      const x2 = p2.x - this.cam.x, y2 = p2.y - this.cam.y;
+      ctx.fillStyle = CLASSES[p2.cls]?.color ?? "#e090c0";
+      ctx.beginPath(); ctx.arc(x2, y2, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#f05070"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x2, y2, 13, -Math.PI / 2, -Math.PI / 2 + (p2.hp / p2.maxHp) * Math.PI * 2); ctx.stroke();
+    } else if (this.multiplayer && this.p2) {
       const p2 = this.p2;
       const x2 = p2.x - this.cam.x, y2 = p2.y - this.cam.y;
       ctx.fillStyle = "rgba(0,0,0,0.3)";

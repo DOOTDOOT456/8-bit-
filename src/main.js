@@ -4,6 +4,7 @@
 import "./style.css";
 import { Game } from "./game/engine.js";
 import { CLASSES, ITEMS, RECIPES, CHAPTERS, RARITY_COLORS, RARITY_NAMES, PRESTIGE_UPGRADES, prestigeCost, ENDLESS_THEME_CYCLE, ENDLESS_BOSS_CYCLE, ENEMY_TYPES, DEEP_LOOT, LOOT_TABLE, BOSSES, BESTIARY_REWARDS, getDailyQuests } from "./game/data.js";
+import { Net, defaultServerUrl } from "./game/net.js";
 
 const $ = sel => document.querySelector(sel);
 
@@ -120,6 +121,7 @@ game.prestige = prestigeStats();
 
 // ---------------- screens ----------------
 const screens = {
+  net: $("#net-screen"),
   classSelect: $("#class-select"),
   story: $("#story-screen"),
   hud: $("#hud"),
@@ -154,26 +156,111 @@ function buildClassSelect() {
       </div>
       <p class="ability"><b>${c.ability}</b> — ${c.abilityDesc}</p>
       <button class="btn primary">Solo — ${c.name}</button>
-    <button class="btn co-op-btn">Co-op — ${c.name}</button>
+      <button class="btn co-op-btn">Co-op — ${c.name}</button>
+      <button class="btn net-btn">🌐 Play Online — ${c.name}</button>
     `;
-    card.querySelector(".primary").onclick = () => chooseClass(id, false);
-    card.querySelector(".co-op-btn").onclick = () => chooseClass(id, true);
+    card.querySelector(".primary").onclick = () => chooseClass(id, "solo");
+    card.querySelector(".co-op-btn").onclick = () => chooseClass(id, "coop");
+    card.querySelector(".net-btn").onclick = () => chooseClass(id, "host");
     list.appendChild(card);
   }
 }
 
-function chooseClass(id, coOp = false) {
+function chooseClass(id, mode = "solo") {
   game.prestige = prestigeStats();
   game.initPlayer(id);
-  game.multiplayer = coOp;
-  if (coOp) {
-    // P2 picks a different class automatically
+  if (mode === "coop") {
+    game.multiplayer = true;
     const others = Object.keys(CLASSES).filter(c => c !== id);
     game.initPlayer2(others[Math.floor(Math.random() * others.length)]);
   }
   loadGame();
   ensureDailyQuests();
+  state.pendingClass = id;
+  state.netMode = mode;
+  if (mode === "host") {
+    hide("classSelect");
+    show("net");
+    state.uiOpen = true;
+    netHost();
+  } else {
+    startChapter(state.chapterIndex);
+  }
+}
+
+// ---------------- netplay ----------------
+let net = null;
+
+function netStatus(msg, ok = false) {
+  const el = $("#net-status");
+  if (el) { el.textContent = msg; el.style.color = ok ? "var(--gold)" : "var(--muted)"; }
+}
+
+async function netHost() {
+  netStatus("Connecting to relay server…");
+  net = new Net(defaultServerUrl());
+  try { await net.connect(); } catch { netStatus("✗ Cannot reach relay server. Start server/ (npm start) or set ?server=ws://host:port"); return; }
+  net.onMessage = m => {
+    if (m.t === "hosted") {
+      net.code = m.code;
+      $("#net-code").textContent = m.code;
+      netStatus(`Room created! Share code:`, true);
+      beginHostGame();
+    } else if (m.t === "peerJoined") {
+      toast(`👥 ${m.name} joined your world!`);
+    } else if (m.t === "peerLeft") {
+      toast(`${m.name} left the world`);
+    }
+  };
+  net.host();
+}
+
+function beginHostGame() {
+  game.netMode = "host";
+  game.netSendState = s => net.sendState(s);
+  net.onMessage = m => {
+    if (m.t === "input") game.applyRemoteInput(m.id, m.keys, m.aim);
+    else if (m.t === "peerJoined") toast(`👥 ${m.name} joined your world!`);
+    else if (m.t === "peerLeft") toast(`${m.name} left the world`);
+  };
+  hide("net");
+  state.uiOpen = false;
   startChapter(state.chapterIndex);
+}
+
+async function netJoin() {
+  const code = $("#join-code").value.trim().toUpperCase();
+  if (!code) { netStatus("Enter a room code first"); return; }
+  netStatus("Connecting to relay server…");
+  net = new Net(defaultServerUrl());
+  try { await net.connect(); } catch { netStatus("✗ Cannot reach relay server. Start server/ (npm start) or set ?server=ws://host:port"); return; }
+  net.join(code, "Player 2");
+  net.onMessage = m => {
+    if (m.t === "joined") {
+      net.code = m.code;
+      netStatus(`Joined room ${m.code}! Waiting for host world…`, true);
+      beginClientGame();
+    } else if (m.t === "error") {
+      netStatus(`✗ ${m.msg}`);
+    } else if (m.t === "state") {
+      if (!state.clientReady) { state.clientReady = true; hide("net"); state.uiOpen = false; }
+      game.applySnapshot(m);
+    } else if (m.t === "hostLeft") {
+      toast("Host left the world");
+    }
+  };
+}
+
+function beginClientGame() {
+  game.netMode = "client";
+  game.netSendInput = (input) => net.sendInput(input.keys, input.aim);
+  // client needs a minimal player/map shell to render snapshots
+  game.initPlayer(state.pendingClass || "knight");
+  const ch = getChapter(0);
+  game.chapter = ch;
+  game.map = { w: 0, h: 0, grid: new Uint8Array(0), theme: { ground: "#333", ground2: "#383838", wall: "#222" }, themeName: "void", props: [], spawn: [0, 0], bossArena: [0, 0] };
+  state.clientReady = false;
+  state.uiOpen = true; // stay on net screen until first snapshot
 }
 
 // ---------------- endless chapter generator ----------------
@@ -728,6 +815,16 @@ $("#bestiary-close").onclick = () => { hide("bestiary"); state.uiOpen = false; }
 $("#dialogue-ok")?.addEventListener("click", () => { state.uiOpen = false; });
 $("#inv-close").onclick = () => { hide("inventory"); state.uiOpen = false; };
 $("#quest-close").onclick = () => { hide("questLog"); state.uiOpen = false; };
+
+// ---------------- netplay buttons ----------------
+$("#btn-net-host")?.addEventListener("click", () => { if (!net) netHost(); });
+$("#btn-net-join")?.addEventListener("click", netJoin);
+$("#net-close")?.addEventListener("click", () => {
+  if (net) { net.close(); net = null; }
+  hide("net");
+  show("classSelect");
+  state.uiOpen = false;
+});
 
 // ---------------- boot ----------------
 buildClassSelect();
