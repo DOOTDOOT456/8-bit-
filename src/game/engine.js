@@ -21,6 +21,7 @@ export class Game {
     this.pickups = [];
     this.boss = null;
     this.bossDefeated = false;
+    this.bossLooted = false;
     this.killCount = 0;
     this.questKills = 0;
     this.timeOfDay = 0.3; // 0..1, 0.25 = dawn, 0.5 noon, 0.75 dusk
@@ -42,6 +43,7 @@ export class Game {
     this.pickups = [];
     this.boss = null;
     this.bossDefeated = false;
+    this.bossLooted = false;
     this.killCount = 0;
     this.questKills = 0;
     this.timeOfDay = 0.3;
@@ -176,6 +178,9 @@ export class Game {
       dx /= len; dy /= len;
       this.tryMove(dx * sp, dy * sp);
       this.facing = Math.atan2(dy, dx);
+      this.moving = true;
+    } else {
+      this.moving = false;
     }
 
     // aim at mouse world pos
@@ -335,9 +340,12 @@ export class Game {
     const b = this.boss;
     this.bossDefeated = true;
     this.gainXp(b.xp);
-    for (const [item, n] of Object.entries(b.drops)) {
-      const count = Array.isArray(n) ? n[0] + Math.floor(Math.random() * (n[1] - n[0] + 1)) : n;
-      this.dropPickup(b.x, b.y, item, count);
+    if (!this.bossLooted) {
+      this.bossLooted = true;
+      for (const [item, n] of Object.entries(b.drops)) {
+        const count = Array.isArray(n) ? n[0] + Math.floor(Math.random() * (n[1] - n[0] + 1)) : n;
+        this.dropPickup(b.x, b.y, item, count);
+      }
     }
     for (let j = 0; j < 40; j++)
       this.particles.push({ x: b.x, y: b.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 60, color: "#ffd040", r: 4 });
@@ -450,7 +458,6 @@ export class Game {
     }
 
     // Araxa spawns spiderlings
-    if (b.spawns && b.frame % 300 === 0) { /* handled below via frame counter */ }
     if (b.spawns && this.frame % (360 - b.phase * 60) === 0) {
       for (let i = 0; i < 2 + b.phase; i++) this.spawnEnemy(b.spawns, b.x + (Math.random() - 0.5) * 60, b.y + (Math.random() - 0.5) * 60);
     }
@@ -467,9 +474,13 @@ export class Game {
       if (!dead) {
         if (pr.friendly) {
           for (const e of this.enemies) {
+            if (pr.hitIds?.has(e)) continue;
             if (Math.hypot(e.x - pr.x, e.y - pr.y) < e.r + pr.r) {
               this.hurtEnemy(e, pr.dmg);
-              if (pr.pierce) { e.pierceHit = true; continue; }
+              if (pr.pierce) {
+                (pr.hitIds ??= new Set()).add(e);
+                continue;
+              }
               dead = true; break;
             }
           }
