@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMBERFALL — An 8-Bit Dungeon Saga</title>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-top">
+      <div class="bar-wrap">
+        <div id="ch-title">EMBERFALL</div>
+        <div class="bar"><div class="fill" id="hp-fill" style="width:100%"></div><span id="hp-text"></span></div>
+        <div class="bar" style="height:8px;margin-top:3px"><div class="fill" id="xp-fill" style="width:0%"></div></div>
+        <div id="clock">☀ Day 1 — 07:00</div>
+        <div id="ability-cd">Ability: READY (F)</div>
+      </div>
+      <div class="hud-btns">
+        <button class="btn tiny" id="btn-inv">Inventory (E)</button>
+        <button class="btn tiny" id="btn-quest">Quests</button>
+      </div>
+    </div>
+    <div id="bossbar">
+      <div id="boss-name"></div>
+      <div class="bar"><div class="fill" id="boss-fill" style="width:100%"></div></div>
+    </div>
+  </div>
+
+  <!-- Class select -->
+  <div id="class-select">
+    <p class="subtitle">— AN 8-BIT DUNGEON SAGA —</p>
+    <h1 class="title-xl">EMBERFALL</h1>
+    <p class="muted">Choose your path. The Ember has gone dark.</p>
+    <div id="class-cards"></div>
+  </div>
+
+  <!-- Story -->
+  <div id="story-screen" style="display:none">
+    <div class="story-card">
+      <h2 id="story-title"></h2>
+      <p id="story-text"></p>
+      <p id="story-quest"></p>
+      <button class="btn primary" id="story-continue">Begin →</button>
+    </div>
+  </div>
+
+  <!-- Inventory + Crafting -->
+  <div id="inventory-screen">
+    <div class="panel">
+      <h2>🎒 Inventory & Crafting</h2>
+      <div id="equipped-slots"></div>
+      <div id="pstats"></div>
+      <h3 style="color:var(--gold)">Items</h3>
+      <div id="inv-grid"></div>
+      <h3 style="color:var(--gold)">⚒ Crafting</h3>
+      <div id="craft-list"></div>
+      <div style="text-align:right;margin-top:12px"><button class="btn" id="inv-close">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Quest log -->
+  <div id="quest-screen">
+    <div class="panel" style="width:min(560px,92vw)">
+      <h2>📜 Quest Log</h2>
+      <div id="quest-current"></div>
+      <div style="text-align:right;margin-top:12px"><button class="btn" id="quest-close">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Dialogue -->
+  <div id="dialogue-box">
+    <p id="dialogue-text"></p>
+    <div style="text-align:right"><button class="btn primary" id="dialogue-ok">Continue</button></div>
+  </div>
+
+  <!-- Death -->
+  <div id="death-screen">
+    <div class="center-panel">
+      <h1>YOU DIED</h1>
+      <p class="muted">The darkness claims another soul… but the Ember calls you back.</p>
+      <button class="btn primary" id="death-retry">Rise Again</button>
+      <button class="btn" id="death-menu">Main Menu</button>
+    </div>
+  </div>
+
+  <!-- Victory -->
+  <div id="victory-screen">
+    <div class="center-panel">
+      <h1>★ DAWN RETURNS ★</h1>
+      <p>Malzhar is destroyed. The Ember burns once more, and the long night over Emberfall has ended.</p>
+      <p class="muted">Thank you for playing — every class, every relic, every heart.</p>
+      <button class="btn primary" id="victory-menu">Play Again</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
