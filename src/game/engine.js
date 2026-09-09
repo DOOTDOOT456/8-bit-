@@ -1,8 +1,29 @@
 // ============================================================
 //  EMBERFALL — core engine
 // ============================================================
-import { ITEMS, ENEMY_TYPES, BOSSES, LOOT_TABLE, CLASSES, RARITY_COLORS } from "./data.js";
+import { ITEMS, ENEMY_TYPES, BOSSES, LOOT_TABLE, CLASSES, RARITY_COLORS, DEEP_LOOT } from "./data.js";
 import { generateMap, isWall, circleHitsWall } from "./world.js";
+
+// Depth scaling: every endless chapter below depth 3 multiplies enemy stats.
+export function depthMultiplier(depth) {
+  if (depth <= 3) return 1;
+  const d = depth - 3;
+  return 1 + d * 0.35 + d * d * 0.04;
+}
+
+export function scaleEnemy(type, depth) {
+  const m = depthMultiplier(depth);
+  if (m === 1) return ENEMY_TYPES[type];
+  const t = ENEMY_TYPES[type];
+  return { ...t, hp: Math.round(t.hp * m), dmg: Math.round(t.dmg * (1 + (m - 1) * 0.6)), xp: Math.round(t.xp * m) };
+}
+
+export function scaleBoss(id, depth) {
+  const m = depthMultiplier(depth);
+  if (m === 1) return BOSSES[id];
+  const b = BOSSES[id];
+  return { ...b, hp: Math.round(b.hp * m), dmg: Math.round(b.dmg * (1 + (m - 1) * 0.6)), xp: Math.round(b.xp * m) };
+}
 
 export class Game {
   constructor(state) {
@@ -29,14 +50,19 @@ export class Game {
     this.hitStop = 0;
     this.onEvent = () => {};
     this.pauseFlag = false;
+    this.depth = 1; // chapter depth: 1-3 story, 4+ endless
+    this.multiplayer = false;
+    this.p2 = null;
   }
 
   startChapter(chapter) {
     this.chapter = chapter;
+    this.phoenixUsed = false;
     this.map = generateMap(chapter.map);
     const [sx, sy] = chapter.map.spawn;
     this.player.x = sx * 32 + 16;
     this.player.y = sy * 32 + 16;
+    if (this.p2) { this.p2.x = this.player.x + 30; this.p2.y = this.player.y; this.p2.hp = this.p2.maxHp; }
     this.enemies = [];
     this.projectiles = [];
     this.particles = [];
@@ -59,7 +85,7 @@ export class Game {
   }
 
   spawnEnemy(type, x, y) {
-    const t = ENEMY_TYPES[type];
+    const t = scaleEnemy(type, this.depth);
     if (!t) return;
     for (let tries = 0; tries < 50; tries++) {
       const tx = 2 + Math.floor(Math.random() * (this.map.w - 4));
@@ -79,7 +105,7 @@ export class Game {
   }
 
   spawnBoss(id) {
-    const b = BOSSES[id];
+    const b = scaleBoss(id, this.depth);
     const [ax, ay] = this.map.bossArena;
     this.boss = {
       id, name: b.name, x: ax * 32 + 16, y: ay * 32 + 16,
@@ -92,13 +118,72 @@ export class Game {
   }
 
   // ------------- player init from class + inventory -------------
+  // ------------- Player 2 (local co-op: IJKL move, auto-attack) -------------
+  initPlayer2(clsId) {
+    const c = CLASSES[clsId];
+    this.p2 = {
+      cls: clsId, x: this.player.x + 30, y: this.player.y, r: 10,
+      maxHp: c.hp + (this.prestige?.maxHp ?? 0), hp: c.hp + (this.prestige?.maxHp ?? 0),
+      speed: c.speed, baseDamage: c.damage, attackRange: c.attackRange,
+      attackArc: c.attackArc, attackCdMax: c.attackCd, ranged: !!c.ranged,
+      attackCd: 0, facing: 0, color: c.color, level: 1,
+    };
+    this.p2Swing = null;
+    this.onEvent({ type: "p2Join", cls: c.name });
+  }
+
+  updateP2() {
+    const p2 = this.p2;
+    if (!p2 || !this.multiplayer) return;
+    const k = this.keys;
+    let dx = 0, dy = 0;
+    if (k.KeyJ) dx -= 1;
+    if (k.KeyL) dx += 1;
+    if (k.KeyI) dy -= 1;
+    if (k.KeyK) dy += 1;
+    const len = Math.hypot(dx, dy);
+    if (len > 0) {
+      dx /= len; dy /= len;
+      const sp = p2.speed + (this.prestige?.speed ?? 0);
+      if (!circleHitsWall(this.map, p2.x + dx * sp, p2.y, p2.r)) p2.x += dx * sp;
+      if (!circleHitsWall(this.map, p2.x, p2.y + dy * sp, p2.r)) p2.y += dy * sp;
+      p2.facing = Math.atan2(dy, dx);
+    }
+    if (p2.attackCd > 0) p2.attackCd--;
+    // auto-attack nearest enemy
+    let nearest = null, nd = Infinity;
+    for (const e of this.enemies) {
+      const d = Math.hypot(e.x - p2.x, e.y - p2.y);
+      if (d < nd) { nd = d; nearest = e; }
+    }
+    if (this.boss?.active) {
+      const d = Math.hypot(this.boss.x - p2.x, this.boss.y - p2.y);
+      if (d < nd) { nd = d; nearest = this.boss; }
+    }
+    if (nearest && p2.attackCd <= 0) {
+      p2.attackCd = p2.attackCdMax;
+      p2.facing = Math.atan2(nearest.y - p2.y, nearest.x - p2.x);
+      const dmg = p2.baseDamage + (this.prestige?.damage ?? 0);
+      if (p2.ranged) {
+        this.projectiles.push({ x: p2.x, y: p2.y, vx: Math.cos(p2.facing) * 6, vy: Math.sin(p2.facing) * 6, dmg, friendly: true, life: 90, color: "#e090c0", r: 4 });
+      } else if (nd < p2.attackRange + nearest.r) {
+        if (nearest === this.boss) this.hurtBoss(dmg);
+        else this.hurtEnemy(nearest, dmg);
+        this.p2Swing = { x: p2.x, y: p2.y, ang: p2.facing, r: p2.attackRange * 0.8, t: 10 };
+      }
+    }
+    // enemies also target p2
+    if (p2.hp <= 0) { p2.hp = p2.maxHp * 0.5; p2.x = this.player.x + 30; p2.y = this.player.y; }
+  }
+
   initPlayer(clsId) {
     const c = CLASSES[clsId];
     this.player = {
       cls: clsId, x: 0, y: 0, r: 10,
-      maxHp: c.hp, hp: c.hp,
+      maxHp: c.hp + (this.prestige?.maxHp ?? 0), hp: c.hp + (this.prestige?.maxHp ?? 0),
       speed: c.speed, baseDamage: c.damage, defense: c.defense,
-      attackRange: c.attackRange, attackArc: c.attackArc, attackCdMax: c.attackCd,
+      attackRange: c.attackRange, attackArc: c.attackArc,
+      attackCdMax: Math.round(c.attackCd * (1 - (this.prestige?.cdr ?? 0))),
       ranged: !!c.ranged, attackCd: 0, facing: 0, level: 1, xp: 0, xpNext: 60,
       invuln: 0, fireImmune: 0,
     };
@@ -109,18 +194,21 @@ export class Game {
     const w = this.equipped.weapon && ITEMS[this.equipped.weapon];
     if (w && w.dmg) d += w.dmg;
     if (this.buffs.strength > 0) d += 10;
+    d += (this.prestige?.damage ?? 0);
     return d;
   }
   get defenseTotal() {
     let d = this.player.defense;
     const a = this.equipped.armor && ITEMS[this.equipped.armor];
     if (a && a.def) d += a.def;
+    d += (this.prestige?.defense ?? 0);
     return d;
   }
   get speedTotal() {
     let s = this.player.speed;
     const a = this.equipped.armor && ITEMS[this.equipped.armor];
     if (a && a.speed) s += a.speed;
+    s += (this.prestige?.speed ?? 0);
     return s;
   }
 
@@ -200,6 +288,7 @@ export class Game {
     if (this.buffs.burnHeal > 0) { this.buffs.burnHeal--; if (this.frame % 30 === 0) this.healPlayer(2); }
 
     this.updateEnemies();
+    this.updateP2();
     this.updateBoss();
     this.updateProjectiles();
     this.updatePickups();
@@ -316,10 +405,20 @@ export class Game {
       this.particles.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, life: 20, color: ENEMY_TYPES[e.type]?.color ?? "#f00", r: 3 });
     // loot
     const table = LOOT_TABLE[e.type] || {};
+    const lootMult = this.prestige?.lootMult ?? 1;
     for (const [item, chance] of Object.entries(table)) {
-      if (Math.random() < chance) this.dropPickup(e.x, e.y, item, 1);
+      if (Math.random() < chance * lootMult) this.dropPickup(e.x, e.y, item, 1);
     }
-    if (Math.random() < 0.05) this.dropPickup(e.x, e.y, "health_pot", 1);
+    if (Math.random() < 0.05 * lootMult) this.dropPickup(e.x, e.y, "health_pot", 1);
+    // Ultra-rare elite drops from deep enemies (depth 10+)
+    if (this.depth >= 10) {
+      for (const dl of DEEP_LOOT) {
+        if (Math.random() < dl.eliteChance * lootMult) {
+          this.dropPickup(e.x, e.y, dl.item, 1);
+          this.onEvent({ type: "legendaryDrop", item: dl.item });
+        }
+      }
+    }
   }
 
   hurtBoss(dmg) {
@@ -346,6 +445,14 @@ export class Game {
         const count = Array.isArray(n) ? n[0] + Math.floor(Math.random() * (n[1] - n[0] + 1)) : n;
         this.dropPickup(b.x, b.y, item, count);
       }
+      // Deep legendary drops (depth 10+ only)
+      const lootMult = this.prestige?.lootMult ?? 1;
+      for (const dl of DEEP_LOOT) {
+        if (this.depth >= dl.minDepth && Math.random() < dl.bossChance * lootMult) {
+          this.dropPickup(b.x, b.y, dl.item, 1);
+          this.onEvent({ type: "legendaryDrop", item: dl.item });
+        }
+      }
     }
     for (let j = 0; j < 40; j++)
       this.particles.push({ x: b.x, y: b.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, life: 60, color: "#ffd040", r: 4 });
@@ -355,7 +462,7 @@ export class Game {
 
   gainXp(n) {
     const p = this.player;
-    p.xp += n;
+    p.xp += Math.round(n * (this.prestige?.xpMult ?? 1));
     while (p.xp >= p.xpNext) {
       p.xp -= p.xpNext;
       p.level++;
@@ -376,6 +483,15 @@ export class Game {
     if (p.invuln > 0) return;
     const actual = Math.max(1, dmg - this.defenseTotal);
     p.hp -= actual;
+    // Phoenix Heart: revive once per fight instead of dying
+    const ph = this.equipped.artifact === "phoenix_heart" && ITEMS["phoenix_heart"];
+    if (p.hp <= 0 && ph && !this.phoenixUsed) {
+      this.phoenixUsed = true;
+      p.hp = Math.floor(p.maxHp * 0.5);
+      p.invuln = 120;
+      this.onEvent({ type: "phoenixRevive" });
+      return;
+    }
     p.invuln = 40;
     this.hitStop = 4;
     this.damageNumbers.push({ x: p.x, y: p.y - 18, v: actual, t: 40, color: "#f05050" });
@@ -552,9 +668,10 @@ export class Game {
     if (item.effect === "dash") {
       const p = this.player;
       const a = p.facing || 0;
+      const reach = id === "sigil_of_depth" ? 12 : 8;
       for (let i = 0; i < 10; i++) {
-        if (!circleHitsWall(this.map, p.x + Math.cos(a) * 8, p.y + Math.sin(a) * 8, p.r)) {
-          p.x += Math.cos(a) * 8; p.y += Math.sin(a) * 8;
+        if (!circleHitsWall(this.map, p.x + Math.cos(a) * reach, p.y + Math.sin(a) * reach, p.r)) {
+          p.x += Math.cos(a) * reach; p.y += Math.sin(a) * reach;
         }
       }
       p.invuln = 20;
@@ -666,6 +783,27 @@ export class Game {
       ctx.globalAlpha = pt.life / 30;
       ctx.fillRect(pt.x - this.cam.x - pt.r / 2, pt.y - this.cam.y - pt.r / 2, pt.r, pt.r);
       ctx.globalAlpha = 1;
+    }
+
+    // player 2 (co-op)
+    if (this.multiplayer && this.p2) {
+      const p2 = this.p2;
+      const x2 = p2.x - this.cam.x, y2 = p2.y - this.cam.y;
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.beginPath(); ctx.ellipse(x2, y2 + 10, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p2.color;
+      ctx.beginPath(); ctx.arc(x2, y2, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#f0f0ff";
+      ctx.fillRect(x2 - 1, y2 - 1, 3, 3);
+      // p2 hp ring
+      ctx.strokeStyle = "#f05070"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x2, y2, 13, -Math.PI / 2, -Math.PI / 2 + (p2.hp / p2.maxHp) * Math.PI * 2); ctx.stroke();
+      if (this.p2Swing) {
+        ctx.strokeStyle = "rgba(255,200,240,0.8)"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(this.p2Swing.x - this.cam.x, this.p2Swing.y - this.cam.y, this.p2Swing.r, this.p2Swing.ang - 0.7, this.p2Swing.ang + 0.7);
+        ctx.stroke();
+        this.p2Swing.t--; if (this.p2Swing.t <= 0) this.p2Swing = null;
+      }
     }
 
     // player

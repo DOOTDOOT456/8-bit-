@@ -109,7 +109,7 @@ button.btn.tiny { padding: 4px 8px; font-size: 11px; }
 #boss-fill { background: linear-gradient(90deg, #802020, #f04040); }
 
 /* ---------- inventory / crafting / quests ---------- */
-#inventory-screen, #quest-screen, #death-screen, #victory-screen {
+#inventory-screen, #quest-screen, #death-screen, #victory-screen, #descent-screen, #bestiary-screen {
   position: fixed; inset: 0; z-index: 30;
   display: none;
   align-items: center; justify-content: center;
@@ -146,6 +146,10 @@ button.btn.tiny { padding: 4px 8px; font-size: 11px; }
   display: flex; flex-direction: column; gap: 4px; align-items: center;
 }
 #pstats { font-size: 13px; border-top: 1px solid var(--border); padding-top: 10px; }
+
+#descent-stats { font-size: 14px; margin: 10px 0; }
+
+#bestiary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
 
 .craft-row {
   display: flex; align-items: center; gap: 12px;

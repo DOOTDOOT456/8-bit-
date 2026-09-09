@@ -67,6 +67,14 @@ export const ITEMS = {
   // artifacts (special ability items)
   wind_charm:   { name: "Wind Charm",     type: "artifact", rarity: 2, color: "#80e0f0", cd: 240, effect: "dash", desc: "Dash forward instantly." },
   totem:        { name: "Totem of Regeneration", type: "artifact", rarity: 3, color: "#60d060", cd: 600, effect: "heal", desc: "Heal 60 HP over time." },
+
+  // ---- Deep Legendaries: only drop past depth 10 ----
+  dawnbreaker:  { name: "Dawnbreaker",      type: "weapon", rarity: 4, color: "#ffe060", dmg: 42, fire: true, pierce: true, desc: "A blade of pure dawnlight. Burns AND pierces." },
+  nightrend:    { name: "Nightrend",        type: "weapon", rarity: 4, color: "#403050", dmg: 38, lifesteal: 0.25, desc: "Heals you for 25% of damage dealt." },
+  cometfall:    { name: "Cometfall Bow",    type: "weapon", rarity: 4, color: "#80c0ff", dmg: 30, pierce: true, desc: "Arrows fall like stars, piercing all." },
+  aegis:        { name: "Aegis of Embers",  type: "armor",  rarity: 4, color: "#f0a050", def: 16, speed: 0.2, desc: "Armor of the first flame. +16 def, +0.2 speed." },
+  phoenix_heart:{ name: "Phoenix Heart",    type: "artifact", rarity: 4, color: "#ff6040", cd: 420, effect: "revive", desc: "Once per fight, revive with 50% HP instead of dying." },
+  sigil_of_depth:{ name: "Sigil of the Deep", type: "artifact", rarity: 4, color: "#40e0b0", cd: 300, effect: "dash", desc: "Dash through the dark, 1.5x farther." },
 };
 
 // ---------------------- RECIPES ----------------------
@@ -116,7 +124,12 @@ export const BOSSES = {
     phases: 3, ranged: true, projSpeed: 4, projColor: "#c080f0",
   },
   spiderling: { name: "Spiderling", hp: 18, dmg: 5, speed: 2.0, color: "#8a5a7a", r: 6, xp: 5, aggro: 300, contact: true },
+  wraith:     { name: "Void Wraith", hp: 55, dmg: 14, speed: 1.6, color: "#7050a0", r: 11, xp: 45, aggro: 260, contact: false, ranged: true, projSpeed: 4, projColor: "#b080f0", fire: true },
+  frostborn:  { name: "Frostborn", hp: 70, dmg: 13, speed: 1.2, color: "#70b0e0", r: 12, xp: 50, aggro: 200, contact: true },
+  cinderbeast:{ name: "Cinder Beast", hp: 85, dmg: 18, speed: 1.7, color: "#e05020", r: 13, xp: 65, aggro: 230, contact: true },
+  abomination:{ name: "Abyss Abomination", hp: 130, dmg: 22, speed: 1.0, color: "#30a080", r: 15, xp: 90, aggro: 220, contact: true },
 };
+
 
 // ---------------------- STORY & QUESTS ----------------------
 // World of EMBERFALL: the Ember, the fire that powered the old kingdom,
@@ -194,7 +207,96 @@ export const THEME = {
   forest: { ground: "#3d6b35", ground2: "#44763b", wall: "#2a4a24", accent: "#5a8a4a" },
   cave:   { ground: "#4a4048", ground2: "#524850", wall: "#2e2830", accent: "#8a5ab0" },
   ash:    { ground: "#4a3f3a", ground2: "#524740", wall: "#2a2422", accent: "#e06030" },
+  void:   { ground: "#2a2440", ground2: "#312a48", wall: "#171226", accent: "#b060f0" },
+  frost:  { ground: "#3a4a5e", ground2: "#425466", wall: "#202a36", accent: "#80c0f0" },
+  ember:  { ground: "#5a3226", ground2: "#643a2c", wall: "#301a14", accent: "#f0a030" },
+  abyss:  { ground: "#243430", ground2: "#2a3c36", wall: "#121a18", accent: "#40e0b0" },
 };
+
+// Endless mode: after the 3 story chapters, generate deeper and deeper
+// procedurally-scaled chapters with rotating themes and escalating bosses.
+export const ENDLESS_THEME_CYCLE = ["void", "frost", "ember", "cave", "abyss", "ash", "forest"];
+export const ENDLESS_BOSS_CYCLE = ["spiderqueen", "warden", "lich"];
+
+// ---------------------- PRESTIGE ----------------------
+// Descend past depth 3 to earn Ember Sigils; reset your chapter progress
+// to spend them on permanent, account-wide power.
+export const PRESTIGE_UPGRADES = [
+  { id: "might",    name: "Ancient Might",      icon: "⚔", desc: "+5 base damage per rank",           baseCost: 1, costGrowth: 1.6, max: 20, stat: "damage", per: 5 },
+  { id: "vitality", name: "Eternal Vitality",   icon: "❤", desc: "+25 max HP per rank",              baseCost: 1, costGrowth: 1.6, max: 20, stat: "maxHp", per: 25 },
+  { id: "warding",  name: "Warding Runes",      icon: "🛡", desc: "+3 defense per rank",              baseCost: 1, costGrowth: 1.7, max: 15, stat: "defense", per: 3 },
+  { id: "swiftness",name: "Zephyr Swiftness",   icon: "👟", desc: "+0.15 move speed per rank",        baseCost: 2, costGrowth: 1.8, max: 10, stat: "speed", per: 0.15 },
+  { id: "greed",    name: "Midas Greed",        icon: "💰", desc: "+15% XP gain per rank",            baseCost: 2, costGrowth: 1.8, max: 10, stat: "xpMult", per: 0.15 },
+  { id: "fortune",  name: "Fortune's Favor",    icon: "🍀", desc: "+10% loot drop chance per rank",   baseCost: 3, costGrowth: 2.0, max: 8,  stat: "lootMult", per: 0.10 },
+  { id: "fury",     name: "Berserker's Fury",   icon: "🌀", desc: "-5% attack cooldown per rank",     baseCost: 3, costGrowth: 2.0, max: 8,  stat: "cdr", per: 0.05 },
+];
+
+export function prestigeCost(upg, rank) {
+  return Math.ceil(upg.baseCost * Math.pow(upg.costGrowth, rank));
+}
+
+// ---------------------- DAILY QUESTS ----------------------
+// Deterministically generated from the date, so every player worldwide gets
+// the same 3 quests each day. Rewards are Ember Sigils.
+export const DAILY_QUEST_POOL = [
+  { id: "slayer",  desc: "Slay {n} creatures",                    amounts: [15, 30, 60],  reward: 1 },
+  { id: "golem",   desc: "Slay {n} Golems",                      amounts: [3, 6, 10],    reward: 1 },
+  { id: "wolf",    desc: "Slay {n} Dire Wolves",                 amounts: [5, 10, 15],   reward: 1 },
+  { id: "wraith",  desc: "Slay {n} Void Wraiths",                amounts: [5, 10, 15],   reward: 2 },
+  { id: "boss",    desc: "Defeat {n} boss{es}",                  amounts: [1, 2, 3],     reward: 2 },
+  { id: "depth",   desc: "Reach depth {n} in the descent",       amounts: [5, 8, 12],    reward: 2 },
+  { id: "level",   desc: "Reach player level {n}",               amounts: [8, 12, 16],   reward: 2 },
+  { id: "kills",   desc: "Slay {n} creatures in total today",    amounts: [50, 100, 200],reward: 3 },
+];
+
+// Seeded PRNG for daily quest selection (same all day, same worldwide)
+export function dailySeed(dateStr) {
+  let h = 2166136261;
+  for (let i = 0; i < dateStr.length; i++) {
+    h ^= dateStr.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function getDailyQuests(dateStr) {
+  let s = dailySeed(dateStr);
+  const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const pool = [...DAILY_QUEST_POOL];
+  const picks = [];
+  for (let i = 0; i < 3 && pool.length; i++) {
+    const idx = Math.floor(rnd() * pool.length);
+    const q = pool.splice(idx, 1)[0];
+    const tier = Math.floor(rnd() * 3);
+    const n = q.amounts[tier];
+    picks.push({
+      id: q.id,
+      desc: q.desc.replace("{n}", n).replace("{es}", n > 1 ? "es" : ""),
+      n,
+      reward: q.reward + tier,
+    });
+  }
+  return picks;
+}
+
+// Bestiary completion rewards: granted the first time you hit each milestone
+export const BESTIARY_REWARDS = [
+  { threshold: 3,  xp: 100, items: { health_pot: 2 },                msg: "Novice Naturalist" },
+  { threshold: 5,  xp: 200, items: { strength_pot: 1, crystal: 1 },  msg: "Field Scholar" },
+  { threshold: 8,  xp: 400, items: { boss_heart: 1 },                msg: "Master Hunter" },
+  { threshold: 10, xp: 800, items: { boss_heart: 2, crystal: 3 },    msg: "Loremaster of Emberfall" },
+  { threshold: 13, xp: 1500, items: { boss_heart: 3 },               msg: "Beast Sovereign — every creature and boss documented!" },
+];
+
+// Deep legendary drops: only appear past depth 10, from elite/boss kills
+export const DEEP_LOOT = [
+  { item: "dawnbreaker",   minDepth: 10, bossChance: 0.25, eliteChance: 0.01 },
+  { item: "nightrend",     minDepth: 10, bossChance: 0.25, eliteChance: 0.01 },
+  { item: "cometfall",     minDepth: 12, bossChance: 0.25, eliteChance: 0.008 },
+  { item: "aegis",         minDepth: 12, bossChance: 0.25, eliteChance: 0.008 },
+  { item: "phoenix_heart", minDepth: 15, bossChance: 0.35, eliteChance: 0.005 },
+  { item: "sigil_of_depth",minDepth: 10, bossChance: 0.3,  eliteChance: 0.012 },
+];
 
 // Enemy loot table: chance to drop item on death
 export const LOOT_TABLE = {
@@ -205,4 +307,9 @@ export const LOOT_TABLE = {
   wolf:     { wolf_pelt: 0.5 },
   golem:    { iron_chunk: 0.6, crystal: 0.1 },
   spiderling: { bone: 0.2 },
+  // Endless-depth enemies
+  wraith:      { crystal: 0.35, ember_shard: 0.3 },
+  frostborn:   { iron_chunk: 0.4, wolf_pelt: 0.2 },
+  cinderbeast: { ember_shard: 0.6, health_pot: 0.1 },
+  abomination: { crystal: 0.25, boss_heart: 0.05, bone: 0.4 },
 };

@@ -21,6 +21,7 @@
       <div class="hud-btns">
         <button class="btn tiny" id="btn-inv">Inventory (E)</button>
         <button class="btn tiny" id="btn-quest">Quests</button>
+        <button class="btn tiny" id="btn-bestiary">Bestiary</button>
       </div>
     </div>
     <div id="bossbar">
@@ -33,7 +34,7 @@
   <div id="class-select">
     <p class="subtitle">— AN 8-BIT DUNGEON SAGA —</p>
     <h1 class="title-xl">EMBERFALL</h1>
-    <p class="muted">Choose your path. The Ember has gone dark.</p>
+    <p class="muted">Choose your path. The Ember has gone dark.<br><span style="color:var(--gold)">Co-op:</span> Player 2 joins as a second hero — move with IJKL, auto-attacks nearby foes.</p>
     <div id="class-cards"></div>
   </div>
 
@@ -61,11 +62,30 @@
     </div>
   </div>
 
+  <!-- Bestiary -->
+  <div id="bestiary-screen">
+    <div class="panel">
+      <h2>📖 Bestiary</h2>
+      <p id="bestiary-progress" class="muted"></p>
+      <h3 style="color:var(--gold)">🏆 Completion Rewards</h3>
+      <div id="bestiary-rewards"></div>
+      <h3 style="color:var(--gold)">Creatures</h3>
+      <div id="bestiary-grid"></div>
+      <h3 style="color:var(--gold)">Bosses</h3>
+      <div id="bestiary-bosses" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px"></div>
+      <div style="text-align:right;margin-top:12px"><button class="btn" id="bestiary-close">Close</button></div>
+    </div>
+  </div>
+
   <!-- Quest log -->
   <div id="quest-screen">
     <div class="panel" style="width:min(560px,92vw)">
       <h2>📜 Quest Log</h2>
       <div id="quest-current"></div>
+      <h3 style="color:var(--gold)">📅 Daily Quests</h3>
+      <p class="muted small" id="daily-date"></p>
+      <div id="daily-list"></div>
+      <div id="daily-list"></div>
       <div style="text-align:right;margin-top:12px"><button class="btn" id="quest-close">Close</button></div>
     </div>
   </div>
@@ -83,6 +103,24 @@
       <p class="muted">The darkness claims another soul… but the Ember calls you back.</p>
       <button class="btn primary" id="death-retry">Rise Again</button>
       <button class="btn" id="death-menu">Main Menu</button>
+    </div>
+  </div>
+
+  <!-- Descent Hub (endless + prestige) -->
+  <div id="descent-screen">
+    <div class="panel">
+      <h2>🔥 The Ember Forge — Descent Hub</h2>
+      <p class="muted">The story is complete, but the descent never ends. Every depth conquered earns Ember Sigils. Spend them here on permanent power — then dive again, deeper and stronger.</p>
+      <div id="descent-stats">
+        <span id="descent-depth"></span> &nbsp;·&nbsp; <span id="descent-kills"></span> &nbsp;·&nbsp; <span id="descent-sigils" style="color:var(--gold)"></span>
+      </div>
+      <div style="display:flex;gap:10px;margin:14px 0">
+        <button class="btn primary" id="btn-descend">Descend →</button>
+        <button class="btn" id="btn-prestige-reset">🔄 Reset Story (+1 Sigil)</button>
+        <button class="btn" id="descent-close">Keep Exploring</button>
+      </div>
+      <h3 style="color:var(--gold)">✦ Permanent Upgrades (kept forever)</h3>
+      <div id="prestige-list"></div>
     </div>
   </div>
 
