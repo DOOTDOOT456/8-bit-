@@ -18,6 +18,16 @@ import {
   getPlayerParty,
   getAllParties,
 } from './parties.mjs';
+import {
+  startSession,
+  updateSession,
+  endSession,
+  getPlayerSummary,
+  getLeaderboard,
+  getActiveSessions,
+  getRecentSessions,
+  CATEGORIES,
+} from './leaderboard.mjs';
 
 const PORT = process.env.PORT || 8787;
 
@@ -336,8 +346,97 @@ wss.on("connection", ws => {
         }
         break;
       }
+      
+      // --- Leaderboard commands ---
+      case "leaderboard_get": {
+        const category = msg.category || CATEGORIES.KILLS;
+        const leaderboard = getLeaderboard(category, msg.limit || 10);
+        ws.send(JSON.stringify({
+          t: "leaderboard_data",
+          category,
+          leaderboard
+        }));
+        break;
+      }
+      
+      case "player_stats": {
+        const playerId = ws.playerId || msg.playerId;
+        if (!playerId) {
+          ws.send(JSON.stringify({ t: "stats_error", error: "Not logged in" }));
+          break;
+        }
+        const summary = getPlayerSummary(playerId);
+        ws.send(JSON.stringify({
+          t: "player_stats",
+          stats: summary
+        }));
+        break;
+      }
+      
+      case "session_start": {
+        const playerId = ws.playerId || generatePlayerId();
+        if (!ws.playerId) {
+          players.set(ws, { id: playerId, name: msg.playerName || 'Player' });
+          ws.playerId = playerId;
+        }
+        const sessionId = startSession(playerId, msg.playerName || players.get(ws)?.name || 'Player');
+        ws.sessionId = sessionId;
+        ws.send(JSON.stringify({
+          t: "session_started",
+          sessionId
+        }));
+        break;
+      }
+      
+      case "session_update": {
+        if (ws.sessionId) {
+          updateSession(ws.sessionId, msg);
+        }
+        break;
+      }
+      
+      case "session_end": {
+        if (ws.sessionId) {
+          const session = endSession(ws.sessionId, msg.completed !== false);
+          ws.send(JSON.stringify({
+            t: "session_ended",
+            session
+          }));
+          ws.sessionId = null;
+        }
+        break;
+      }
+      
+      case "active_sessions": {
+        const sessions = getActiveSessions(msg.limit || 10);
+        ws.send(JSON.stringify({
+          t: "active_sessions",
+          sessions
+        }));
+        break;
+      }
+      
+      case "recent_sessions": {
+        const sessions = getRecentSessions(msg.limit || 20);
+        ws.send(JSON.stringify({
+          t: "recent_sessions",
+          sessions
+        }));
+        break;
+      }
     }
   });
+
+  // Update session on disconnect
+  ws.on("close", () => {
+    // ... existing close logic ...
+    
+    // End session if active
+    if (ws.sessionId) {
+      endSession(ws.sessionId, false); // abandoned
+    }
+  });
+}
 
   ws.on("close", () => {
     const room = ws.roomCode ? rooms.get(ws.roomCode) : null;

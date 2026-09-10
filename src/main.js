@@ -1206,8 +1206,165 @@ function handleOrientation(event) {
   }
 }
 
-// ---------------- achievement notifications ----------------
-function renderAchievementNotifications() {
+// ---------------- keyboard hints overlay ----------------
+function setupKeyboardHints() {
+  const hints = document.createElement('div');
+  hints.id = 'keyboard-hints';
+  hints.style.cssText = `
+    position: fixed;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    z-index: 25;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    pointer-events: none;
+    opacity: 0.8;
+    transition: opacity 0.3s;
+  `;
+  
+  hints.innerHTML = `
+    <span class="hint"><kbd>W A S D</kbd> Move</span>
+    <span class="hint"><kbd>F</kbd> Ability</span>
+    <span class="hint"><kbd>Left Click</kbd> Attack</span>
+    <span class="hint"><kbd>E</kbd> Inventory</span>
+    <span class="hint"><kbd>Q</kbd> Potion</span>
+    <span class="hint"><kbd>R</kbd> Artifact</span>
+  `;
+  
+  document.body.appendChild(hints);
+  
+  // Add CSS for kbd elements
+  const kbdStyle = document.createElement('style');
+  kbdStyle.textContent = `
+    #keyboard-hints kbd {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 2px 6px;
+      font-family: inherit;
+      font-size: 10px;
+      color: var(--text);
+    }
+    #keyboard-hints .hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    @media (max-width: 768px) {
+      #keyboard-hints {
+        display: none;
+      }
+    }
+  `;
+  document.head.appendChild(kbdStyle);
+}
+
+// ---------------- help tooltip ----------------
+function setupHelpTooltip() {
+  let tooltipTimeout;
+  let isTooltipVisible = false;
+  
+  const tooltip = document.createElement('div');
+  tooltip.id = 'help-tooltip';
+  tooltip.style.cssText = `
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--gold);
+    border-radius: 8px;
+    padding: 12px 20px;
+    z-index: 55;
+    font-size: 12px;
+    color: var(--text);
+    max-width: 400px;
+    text-align: center;
+    display: none;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  `;
+  
+  document.body.appendChild(tooltip);
+  
+  // Show help on first play
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      showHelpTooltip('🎮 Welcome to EMBERFALL!\nUse WASD to move, click to attack.\nSurvive, loot, and bring back the dawn!\n\nPress H for more controls.', 8000);
+    }, 1000);
+  });
+  
+  // Keyboard shortcut hints
+  window.addEventListener('keydown', (e) => {
+    switch (e.code) {
+      case 'KeyH':
+        showHelpTooltip('📖 CONTROLS & TIPS\n\n🎮 Movement: WASD / Arrow keys\n⚔️ Attack: Left mouse click\n🔥 Ability: F key\n🎒 Inventory: E key\n🧪 Potion: Q key\n💎 Artifact: R key\n🔥 Dash: G key (field skill)\n🏕️ Campfire: H key (set waypoint)\n🔇 Mute: M key\n\n💡 Tips:\n• Light campfires to set waypoints\n• Craft gear before descending\n• Food gives damage/heal buffs\n• Fire weapons burn enemies\n• Bosses get stronger in phases', 12000);
+        break;
+      case 'Escape':
+        hideHelpTooltip();
+        break;
+    }
+  });
+  
+  function showHelpTooltip(msg, duration = 5000) {
+    tooltip.innerHTML = msg.replace(/\n/g, '<br>');
+    tooltip.style.display = 'block';
+    clearTimeout(tooltipTimeout);
+    
+    // Fade in
+    tooltip.style.opacity = '0';
+    tooltip.style.transition = 'opacity 0.3s';
+    requestAnimationFrame(() => {
+      tooltip.style.opacity = '1';
+    });
+    
+    tooltipTimeout = setTimeout(() => {
+      hideHelpTooltip();
+    }, duration);
+  }
+  
+  function hideHelpTooltip() {
+    clearTimeout(tooltipTimeout);
+    tooltip.style.opacity = '0';
+    tooltip.style.transition = 'opacity 0.3s';
+    setTimeout(() => {
+      tooltip.style.display = 'none';
+    }, 300);
+  }
+  
+  window.showHelpTooltip = showHelpTooltip;
+  window.hideHelpTooltip = hideHelpTooltip;
+}
+
+// ---------------- save indicator ----------------
+function setupSaveIndicator() {
+  const indicator = document.createElement('div');
+  indicator.id = 'save-indicator';
+  indicator.style.cssText = `
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 20;
+    color: var(--gold);
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.5s;
+    pointer-events: none;
+  `;
+  indicator.textContent = '💾 Auto-saving...';
+  document.body.appendChild(indicator);
+}
+
+// Call setupSaveIndicator in boot
+setupSaveIndicator();
   const notifications = state.achievements?.getNotifications() || [];
   if (!notifications.length) return;
   
@@ -1394,6 +1551,12 @@ updateMuteBtn();
 // Setup party UI
 setupPartyUI();
 
+// Add keyboard shortcut hints overlay
+setupKeyboardHints();
+
+// Add contextual help tooltip
+setupHelpTooltip();
+
 // Initialize sound on first interaction
 const initAudio = () => {
   sound.init();
@@ -1429,3 +1592,17 @@ setInterval(() => {
     }
   }
 }, 2000);
+
+// Auto-save reminder
+setInterval(() => {
+  if (game.player && game.map && !state.uiOpen) {
+    // Show subtle save indicator
+    const indicator = document.getElementById('save-indicator');
+    if (indicator) {
+      indicator.style.opacity = '1';
+      setTimeout(() => {
+        indicator.style.opacity = '0.3';
+      }, 1000);
+    }
+  }
+}, 30000);
