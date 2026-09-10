@@ -3,10 +3,17 @@
 // ============================================================
 import "./style.css";
 import { Game } from "./game/engine.js";
+import { drawPlayer, drawEnemy, drawBoss, drawProjectile, drawPickup, drawParticle, drawDamageNumber, drawMinimap, drawAbilityCd, drawVignette } from "./game/sprites.js";
+import { sound } from "./game/sound.js";
+import { AchievementManager, ACHIEVEMENTS } from "./game/achievements.js";
 import { CLASSES, ITEMS, RECIPES, CHAPTERS, RARITY_COLORS, RARITY_NAMES, PRESTIGE_UPGRADES, prestigeCost, ENDLESS_THEME_CYCLE, ENDLESS_BOSS_CYCLE, ENEMY_TYPES, DEEP_LOOT, LOOT_TABLE, BOSSES, BESTIARY_REWARDS, getDailyQuests } from "./game/data.js";
 import { Net, defaultServerUrl } from "./game/net.js";
 
+// --- DOM helpers ---
 const $ = sel => document.querySelector(sel);
+const show = (id) => { if ($(`#${id}`)) $(`#${id}`).style.display = "flex"; };
+const hide = (id) => { if ($(`#${id}`)) $(`#${id}`).style.display = "none"; };
+const el = (id) => $(`#${id}`);
 
 const state = {
   uiOpen: false,
@@ -25,6 +32,14 @@ const state = {
   prestigeRanks: {},     // upgradeId -> rank
   bestDepth: 0,
   totalKills: 0,
+  // new tracking
+  playedClasses: {},
+  craftCount: 0,
+  totalItemsCollected: 0,
+  highestLevel: 1,
+  phoenixRevives: 0,
+  deathCount: 0,
+  achievements: null, // set after Game init
 };
 
 // ---------------- daily quests ----------------
@@ -830,6 +845,283 @@ $("#dialogue-ok")?.addEventListener("click", () => { state.uiOpen = false; });
 $("#inv-close").onclick = () => { hide("inventory"); state.uiOpen = false; };
 $("#quest-close").onclick = () => { hide("questLog"); state.uiOpen = false; };
 
+// ---------------- mobile touch controls ----------------
+let touchControls = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  attack: false,
+  ability: false,
+  useItem: false,
+  useArtifact: false,
+};
+
+function setupMobileControls() {
+  const canvas = document.getElementById('game');
+  if (!canvas) return;
+  
+  // Touch areas (invisible overlay zones)
+  const touchZone = document.createElement('div');
+  touchZone.style.cssText = `
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 40%;
+    z-index: 20;
+    pointer-events: auto;
+    display: none;
+  `;
+  touchZone.id = 'touch-zone';
+  document.body.appendChild(touchZone);
+  
+  // Virtual joystick area (left side)
+  const joystickZone = document.createElement('div');
+  joystickZone.style.cssText = `
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    border: 2px solid rgba(255,255,255,0.2);
+  `;
+  joystickZone.id = 'joystick-zone';
+  touchZone.appendChild(joystickZone);
+  
+  // Attack button (right side)
+  const attackBtn = document.createElement('button');
+  attackBtn.style.cssText = `
+    position: absolute;
+    bottom: 40px;
+    right: 40px;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255,80,80,0.3);
+    border: 3px solid rgba(255,80,80,0.5);
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  `;
+  attackBtn.textContent = 'ATTACK';
+  attackBtn.id = 'attack-btn';
+  touchZone.appendChild(attackBtn);
+  
+  // Ability button
+  const abilityBtn = document.createElement('button');
+  abilityBtn.style.cssText = `
+    position: absolute;
+    bottom: 40px;
+    right: 140px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(255,208,64,0.3);
+    border: 3px solid rgba(255,208,64,0.5);
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  `;
+  abilityBtn.textContent = 'F\nABILITY';
+  abilityBtn.id = 'ability-btn';
+  abilityBtn.onclick = () => { game.useAbility(); sound.play('ability'); };
+  touchZone.appendChild(abilityBtn);
+  
+  // Show touch controls on touch devices
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    touchZone.style.display = 'block';
+  }
+  
+  // Joystick handling
+  let joystickActive = false;
+  let joystickCenter = { x: 0, y: 0 };
+  let joystickTouch = null;
+  
+  joystickZone.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (joystickActive) return;
+    
+    const touch = e.changedTouches[0];
+    joystickTouch = touch.identifier;
+    joystickActive = true;
+    
+    const rect = joystickZone.getBoundingClientRect();
+    joystickCenter.x = rect.left + rect.width / 2;
+    joystickCenter.y = rect.top + rect.height / 2;
+    
+    updateJoystick(touch.clientX, touch.clientY);
+  });
+  
+  joystickZone.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === joystickTouch) {
+        updateJoystick(touch.clientX, touch.clientY);
+      }
+    }
+  });
+  
+  joystickZone.addEventListener('touchend', (e) => {
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === joystickTouch) {
+        joystickActive = false;
+        joystickTouch = null;
+        touchControls.left = false;
+        touchControls.right = false;
+        touchControls.up = false;
+        touchControls.down = false;
+        // Reset joystick visual
+        const js = document.getElementById('joystick-zone');
+        js.style.transform = '';
+        js.style.borderColor = 'rgba(255,255,255,0.2)';
+      }
+    }
+  });
+  
+  function updateJoystick(touchX, touchY) {
+    const dx = touchX - joystickCenter.x;
+    const dy = touchY - joystickCenter.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxDist = 60;
+    
+    if (dist > maxDist) {
+      // Clamp to max distance
+      const scale = maxDist / dist;
+      // Visual feedback
+      const js = document.getElementById('joystick-zone');
+      js.style.transform = `translate(${dx * scale * 0.3}px, ${dy * scale * 0.3}px)`;
+      js.style.borderColor = 'rgba(255,208,64,0.5)';
+    }
+    
+    // Determine direction
+    if (dist > 15) {
+      const angle = Math.atan2(dy, dx);
+      const normDx = dx / dist;
+      const normDy = dy / dist;
+      
+      touchControls.left = normDx < -0.3;
+      touchControls.right = normDx > 0.3;
+      touchControls.up = normDy < -0.3;
+      touchControls.down = normDy > 0.3;
+      
+      // Sync to game keys for movement
+      game.keys = {
+        ...game.keys,
+        KeyW: touchControls.up,
+        KeyS: touchControls.down,
+        KeyA: touchControls.left,
+        KeyD: touchControls.right,
+      };
+    } else {
+      touchControls.left = false;
+      touchControls.right = false;
+      touchControls.up = false;
+      touchControls.down = false;
+    }
+  }
+  
+  // Attack button touch
+  attackBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    touchControls.attack = true;
+    game.mouse.down = true;
+    attackBtn.style.background = 'rgba(255,80,80,0.5)';
+  });
+  
+  attackBtn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    touchControls.attack = false;
+    game.mouse.down = false;
+    attackBtn.style.background = 'rgba(255,80,80,0.3)';
+  });
+  
+  // Item use button
+  const itemBtn = document.createElement('button');
+  itemBtn.style.cssText = `
+    position: absolute;
+    bottom: 130px;
+    right: 40px;
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    background: rgba(100,200,255,0.3);
+    border: 2px solid rgba(100,200,255,0.5);
+    color: white;
+    font-size: 10px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  `;
+  itemBtn.textContent = 'Q\nPOTION';
+  itemBtn.onclick = () => { game.usePotion('health_pot'); };
+  touchZone.appendChild(itemBtn);
+  
+  // Artifact button
+  const artifactBtn = document.createElement('button');
+  artifactBtn.style.cssText = `
+    position: absolute;
+    bottom: 130px;
+    right: 110px;
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    background: rgba(200,150,255,0.3);
+    border: 2px solid rgba(200,150,255,0.5);
+    color: white;
+    font-size: 10px;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  `;
+  artifactBtn.textContent = 'R\nARTIFACT';
+  artifactBtn.onclick = () => { game.useArtifact(); };
+  touchZone.appendChild(artifactBtn);
+}
+
+// Gyroscope handling for mobile
+let gyroRotation = 0;
+function handleOrientation(event) {
+  if (event.gamma !== null) {
+    // Gamma: left/right tilt (-90 to 90)
+    gyroRotation = event.gamma * 0.01; // Convert to radians-ish
+  }
+}
+
+// ---------------- achievement notifications ----------------
+function renderAchievementNotifications() {
+  const notifications = state.achievements?.getNotifications() || [];
+  if (!notifications.length) return;
+  
+  for (const notif of notifications) {
+    // Show achievement toast
+    toast(`🏆 ${notif.icon} ${notif.name}: ${notif.description}`);
+  }
+  
+  state.achievements.clearNotifications();
+  
+  // Also show in achievement panel if open
+  if (screens.achievement && screens.achievement.style.display === 'flex') {
+    refreshAchievements();
+  }
+}
+
 // ---------------- netplay buttons ----------------
 $("#btn-net-host")?.addEventListener("click", () => { if (!net) netHost(); });
 $("#btn-net-join")?.addEventListener("click", netJoin);
@@ -845,8 +1137,39 @@ buildClassSelect();
 refreshInventory();
 muteOn = game.muted;
 updateMuteBtn();
+
+// Initialize sound on first interaction
+const initAudio = () => {
+  sound.init();
+  window.removeEventListener('click', initAudio);
+  window.removeEventListener('keydown', initAudio);
+};
+window.addEventListener('click', initAudio);
+window.addEventListener('keydown', initAudio);
+
+// Initialize achievements
+state.achievements = new AchievementManager(state);
+
+// Setup mobile touch controls
+setupMobileControls();
+
+// Setup gyroscope (mobile)
+if (window.DeviceOrientationEvent) {
+  window.addEventListener('deviceorientation', handleOrientation);
+}
+
 const canvas = $("#game");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 game.attach(canvas);
 updateHUD();
+
+// Check achievements periodically
+setInterval(() => {
+  if (state.achievements) {
+    const newUnlock = state.achievements.checkAll();
+    if (newUnlock) {
+      renderAchievementNotifications();
+    }
+  }
+}, 2000);

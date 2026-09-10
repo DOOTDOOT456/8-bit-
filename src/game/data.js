@@ -113,6 +113,12 @@ export const ENEMY_TYPES = {
   imp:      { name: "Fire Imp", hp: 30,  dmg: 11, speed: 1.4, color: "#e06030", r: 9,  xp: 20, aggro: 180, contact: false, ranged: true, projSpeed: 3.6, projColor: "#f08040", fire: true },
   wolf:     { name: "Dire Wolf",hp: 40,  dmg: 12, speed: 1.9, color: "#707080", r: 11, xp: 22, aggro: 240, contact: true },
   golem:    { name: "Golem",    hp: 90,  dmg: 16, speed: 0.6, color: "#909098", r: 14, xp: 40, aggro: 140, contact: true },
+  // ---- Deeper dungeon enemies (endless mode) ----
+  spiderling: { name: "Spiderling", hp: 18,  dmg: 5,  speed: 1.2, color: "#8a3a5a", r: 8,  xp: 6,  aggro: 100, contact: true },
+  wraith:     { name: "Void Wraith", hp: 50,  dmg: 14, speed: 2.2, color: "#404080", r: 10, xp: 30, aggro: 200, contact: false, ranged: true, projSpeed: 4.0, projColor: "#6060c0", fire: false },
+  frostborn:  { name: "Frostborn",  hp: 65,  dmg: 15, speed: 1.6, color: "#80c0f0", r: 12, xp: 35, aggro: 180, contact: true, fireImmune: true },
+  cinderbeast:{ name: "Cinderbeast", hp: 75,  dmg: 18, speed: 1.8, color: "#f06030", r: 13, xp: 45, aggro: 200, contact: true, fire: true },
+  abomination:{ name: "Abomination", hp: 120, dmg: 22, speed: 1.0, color: "#5a5a6a", r: 16, xp: 60, aggro: 260, contact: true },
 };
 
 // ---------------------- BOSSES ----------------------
@@ -313,11 +319,11 @@ export const LOOT_TABLE = {
   imp:         { ember_shard: 0.5, health_pot: 0.06 },
   wolf:        { wolf_pelt: 0.5 },
   golem:       { iron_chunk: 0.6, crystal: 0.1 },
-  spiderling:  { bone: 0.2 },
-  wraith:      { crystal: 0.35, ember_shard: 0.3 },
-  frostborn:   { iron_chunk: 0.4, wolf_pelt: 0.2 },
-  cinderbeast: { ember_shard: 0.6, health_pot: 0.1 },
-  abomination: { crystal: 0.25, boss_heart: 0.05, bone: 0.4 },
+  spiderling:  { bone: 0.2, health_pot: 0.1 },
+  wraith:      { crystal: 0.35, ember_shard: 0.3, health_pot: 0.1 },
+  frostborn:   { iron_chunk: 0.4, wolf_pelt: 0.2, health_pot: 0.15 },
+  cinderbeast: { ember_shard: 0.6, health_pot: 0.1, bone: 0.2 },
+  abomination: { crystal: 0.25, boss_heart: 0.05, bone: 0.4, iron_chunk: 0.2 },
 };
 
 // Focused (elite) enemies for the descent — unlocked via the champion seal per chapter.

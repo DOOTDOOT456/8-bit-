@@ -1,0 +1,31 @@
+{
+  "name": "Emberfall Game Development",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:18",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "forwardPorts": [5173, 8787],
+  "portsAttributes": {
+    "5173": {
+      "label": "Frontend Dev Server",
+      "onAutoForward": "notify"
+    },
+    "8787": {
+      "label": "Netplay Server",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "cd server && npm install",
+  "remoteUser": "node"
+}
