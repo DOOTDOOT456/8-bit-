@@ -15,6 +15,54 @@ const show = (id) => { if ($(`#${id}`)) $(`#${id}`).style.display = "flex"; };
 const hide = (id) => { if ($(`#${id}`)) $(`#${id}`).style.display = "none"; };
 const el = (id) => $(`#${id}`);
 
+// Global cosmetics state
+const cosmeticsState = {
+  skin: 'default',
+  trail: 'none',
+  aura: 'none',
+};
+
+function getSkin() { return cosmeticsState.skin; }
+function setSkin(id) { cosmeticsState.skin = id; }
+function getTrail() { return cosmeticsState.trail; }
+function setTrail(id) { cosmeticsState.trail = id; }
+function getAura() { return cosmeticsState.aura; }
+function setAura(id) { cosmeticsState.aura = id; }
+function getCosmetics() {
+  return {
+    skin: cosmeticsState.skin,
+    trail: cosmeticsState.trail,
+    aura: cosmeticsState.aura,
+    skins: [
+      { id: 'default', name: 'Default', description: 'Classic player color', color: null, equipped: cosmeticsState.skin === 'default' },
+      { id: 'dark', name: 'Dark', description: 'Dark themed player', color: '#2a2a3a', equipped: cosmeticsState.skin === 'dark' },
+      { id: 'light', name: 'Light', description: 'Light themed player', color: '#e0e0f0', equipped: cosmeticsState.skin === 'light' },
+      { id: 'crimson', name: 'Crimson', description: 'Blood red player', color: '#c03030', equipped: cosmeticsState.skin === 'crimson' },
+      { id: 'sapphire', name: 'Sapphire', description: 'Blue sapphire player', color: '#4a6fd4', equipped: cosmeticsState.skin === 'sapphire' },
+      { id: 'emerald', name: 'Emerald', description: 'Green emerald player', color: '#3fae5a', equipped: cosmeticsState.skin === 'emerald' },
+      { id: 'shadowfire', name: 'Shadowfire', description: 'Purple shadow fire', color: '#8040a0', equipped: cosmeticsState.skin === 'shadowfire' },
+      { id: 'dawn', name: 'Dawn', description: 'Golden dawn player', color: '#f0c040', equipped: cosmeticsState.skin === 'dawn' },
+      { id: 'void', name: 'Void', description: 'Mysterious void player', color: '#2a2a4a', equipped: cosmeticsState.skin === 'void' },
+    ],
+    trails: [
+      { id: 'none', name: 'No Trail', description: 'No trail effect', color: null, icon: '🚶', equipped: cosmeticsState.trail === 'none' },
+      { id: 'ember', name: 'Ember Trail', description: 'Leave a trail of embers', color: '#f06030', icon: '🔥', equipped: cosmeticsState.trail === 'ember' },
+      { id: 'frost', name: 'Frost Trail', description: 'Leave a trail of frost', color: '#80c0f0', icon: '❄️', equipped: cosmeticsState.trail === 'frost' },
+      { id: 'shadow', name: 'Shadow Trail', description: 'Leave a shadowy trail', color: '#605080', icon: '🌑', equipped: cosmeticsState.trail === 'shadow' },
+      { id: 'gold', name: 'Golden Trail', description: 'Leave a trail of gold', color: '#ffd040', icon: '✨', equipped: cosmeticsState.trail === 'gold' },
+      { id: 'rainbow', name: 'Rainbow Trail', description: 'Leave a rainbow trail', color: 'rainbow', icon: '🌈', equipped: cosmeticsState.trail === 'rainbow' },
+    ],
+    auras: [
+      { id: 'none', name: 'No Aura', description: 'No aura effect', color: null, icon: '⚪', equipped: cosmeticsState.aura === 'none' },
+      { id: 'knight_aura', name: 'Knight\'s Might', description: 'Blue shield aura', color: '#4a6fd4', icon: '🛡️', equipped: cosmeticsState.aura === 'knight_aura' },
+      { id: 'ranger_aura', name: 'Ranger\'s Focus', description: 'Green nature aura', color: '#3fae5a', icon: '🏹', equipped: cosmeticsState.aura === 'ranger_aura' },
+      { id: 'pyromancer_aura', name: 'Pyromancer\'s Fire', description: 'Orange fire aura', color: '#e07030', icon: '🔥', equipped: cosmeticsState.aura === 'pyromancer_aura' },
+      { id: 'champion', name: 'Champion\'s Glory', description: 'Golden champion aura', color: '#ffd040', icon: '🏆', equipped: cosmeticsState.aura === 'champion' },
+      { id: 'legendary', name: 'Legendary Presence', description: 'Rainbow legendary aura', color: 'rainbow', icon: '👑', equipped: cosmeticsState.aura === 'legendary' },
+    ],
+  };
+}
+
 const state = {
   uiOpen: false,
   inventory: { health_pot: 2, iron_chunk: 2 },
@@ -1381,15 +1429,336 @@ setupSaveIndicator();
   }
 }
 
-// ---------------- netplay buttons ----------------
-$("#btn-net-host")?.addEventListener("click", () => { if (!net) netHost(); });
-$("#btn-net-join")?.addEventListener("click", netJoin);
-$("#net-close")?.addEventListener("click", () => {
-  if (net) { net.close(); net = null; }
-  hide("net");
-  show("classSelect");
-  state.uiOpen = false;
-});
+// ---------------- class editor ----------------
+let selectedClass = null;
+let characterPreviewCanvas = null;
+let characterPreviewCtx = null;
+
+function setupClassEditor() {
+  // Set up character preview canvas
+  characterPreviewCanvas = document.getElementById('character-preview');
+  characterPreviewCtx = characterPreviewCanvas?.getContext('2d');
+  
+  // Set up customization selectors
+  setupSkinSelector();
+  setupTrailSelector();
+  setupAuraSelector();
+  
+  // Hide character editor initially
+  const editor = document.querySelector('.character-editor');
+  if (editor) editor.style.display = 'none';
+}
+
+function setupSkinSelector() {
+  const container = document.getElementById('skin-selector');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  const cosmetics = window.getCosmetics?.() || { skins: [] };
+  
+  for (const skin of cosmetics.skins || []) {
+    const btn = document.createElement('button');
+    btn.className = 'skin-option';
+    btn.style.cssText = `
+      width: 60px; height: 60px; margin: 4px; padding: 4px;
+      background: ${skin.color || '#333'}; border: 2px solid ${skin.equipped ? 'var(--gold)' : 'var(--border)'};
+      cursor: pointer; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    `;
+    btn.innerHTML = `
+      <div style="width:24px;height:24px;border-radius:50%;background:${skin.color || '#333'};opacity:0.8"></div>
+      <div style="font-size:10px;margin-top:4px;color:var(--text);text-align:center">${skin.name}</div>
+    `;
+    btn.title = skin.description;
+    btn.onclick = () => selectSkin(skin.id);
+    container.appendChild(btn);
+  }
+}
+
+function setupTrailSelector() {
+  const container = document.getElementById('trail-selector');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  const cosmetics = window.getCosmetics?.() || { trails: [] };
+  
+  for (const trail of cosmetics.trails || []) {
+    const btn = document.createElement('button');
+    btn.className = 'trail-option';
+    btn.style.cssText = `
+      width: 60px; height: 60px; margin: 4px; padding: 4px;
+      background: ${trail.color || '#2a2a34'}; border: 2px solid ${trail.equipped ? 'var(--gold)' : 'var(--border)'};
+      cursor: pointer; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    `;
+    btn.innerHTML = `
+      <div style="font-size:24px">${trail.icon || '🌟'}</div>
+      <div style="font-size:10px;margin-top:4px;color:var(--text);text-align:center">${trail.name}</div>
+    `;
+    btn.title = trail.description;
+    btn.onclick = () => selectTrail(trail.id);
+    container.appendChild(btn);
+  }
+}
+
+function setupAuraSelector() {
+  const container = document.getElementById('aura-selector');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  const cosmetics = window.getCosmetics?.() || { auras: [] };
+  
+  for (const aura of cosmetics.auras || []) {
+    const btn = document.createElement('button');
+    btn.className = 'aura-option';
+    btn.style.cssText = `
+      width: 60px; height: 60px; margin: 4px; padding: 4px;
+      background: ${aura.color || '#2a2a34'}; border: 2px solid ${aura.equipped ? 'var(--gold)' : 'var(--border)'};
+      cursor: pointer; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    `;
+    btn.innerHTML = `
+      <div style="font-size:24px">${aura.icon || '💫'}</div>
+      <div style="font-size:10px;margin-top:4px;color:var(--text);text-align:center">${aura.name}</div>
+    `;
+    btn.title = aura.description;
+    btn.onclick = () => selectAura(aura.id);
+    container.appendChild(btn);
+  }
+}
+
+function selectSkin(skinId) {
+  if (window.setSkin) window.setSkin(skinId);
+  updateCharacterPreview();
+  setupSkinSelector(); // Refresh to show selection
+}
+
+function selectTrail(trailId) {
+  if (window.setTrail) window.setTrail(trailId);
+  setupTrailSelector(); // Refresh to show selection
+}
+
+function selectAura(auraId) {
+  if (window.setAura) window.setAura(auraId);
+  setupAuraSelector(); // Refresh to show selection
+}
+
+function updateCharacterPreview() {
+  if (!characterPreviewCanvas || !characterPreviewCtx) return;
+  
+  const ctx = characterPreviewCtx;
+  const canvas = characterPreviewCanvas;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw background
+  ctx.fillStyle = '#1a1a2a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw character
+  const x = canvas.width / 2;
+  const y = canvas.height / 2 + 20;
+  const bob = Math.sin(Date.now() / 200) * 3;
+  
+  // Get current cosmetics
+  const skin = window.getSkin?.() || 'default';
+  const trail = window.getTrail?.() || 'none';
+  const aura = window.getAura?.() || 'none';
+  
+  // Draw aura
+  if (aura !== 'none') {
+    const auraColor = getAuraColor(aura);
+    ctx.strokeStyle = auraColor + '60';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y + bob, 35 + Math.sin(Date.now() / 300) * 5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  
+  // Draw character body with skin color
+  const skinColor = getSkinColor(skin, selectedClass?.color || '#4a6fd4');
+  
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 15 + bob, 12, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Body
+  ctx.fillStyle = skinColor;
+  ctx.beginPath();
+  ctx.arc(x, y + bob, 10, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Hair
+  ctx.fillStyle = darkenColor(skinColor, 0.6);
+  ctx.beginPath();
+  ctx.arc(x, y - 3 + bob, 10, Math.PI, 2 * Math.PI);
+  ctx.fill();
+  
+  // Eyes
+  ctx.fillStyle = '#1a1a2a';
+  ctx.fillRect(x - 3, y - 1 + bob, 2, 2);
+  ctx.fillRect(x + 2, y - 1 + bob, 2, 2);
+  
+  // Trail effect
+  if (trail !== 'none') {
+    const trailColor = getTrailColor(trail, Date.now() / 100);
+    ctx.strokeStyle = trailColor + '80';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 15 + bob);
+    for (let i = 1; i <= 5; i++) {
+      const t = Date.now() / 100 + i * 0.2;
+      const tx = x - Math.sin(t) * i * 3;
+      const ty = y + 15 + bob + i * 4;
+      ctx.lineTo(tx, ty);
+    }
+    ctx.stroke();
+  }
+  
+  // Weapon placeholder
+  if (selectedClass) {
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(x + 8, y - 5 + bob, 12, 4);
+  }
+}
+
+function getAuraColor(auraId) {
+  const colors = {
+    none: 'transparent',
+    knight_aura: '#4a6fd4',
+    ranger_aura: '#3fae5a',
+    pyromancer_aura: '#e07030',
+    champion: '#ffd040',
+    legendary: 'rainbow',
+  };
+  return colors[auraId] || '#ffd040';
+}
+
+function getSkinColor(skinId, baseColor) {
+  const colors = {
+    default: baseColor,
+    dark: '#2a2a3a',
+    light: '#e0e0f0',
+    crimson: '#c03030',
+    sapphire: '#4a6fd4',
+    emerald: '#3fae5a',
+    shadowfire: '#8040a0',
+    dawn: '#f0c040',
+    void: '#2a2a4a',
+  };
+  return colors[skinId] || baseColor;
+}
+
+function getTrailColor(trailId, frame) {
+  const colors = {
+    none: null,
+    ember: '#f06030',
+    frost: '#80c0f0',
+    shadow: '#605080',
+    gold: '#ffd040',
+    rainbow: `hsl(${frame % 360}, 100%, 60%)`,
+  };
+  return colors[trailId] || null;
+}
+
+function darkenColor(color, factor) {
+  if (color.startsWith('#')) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgb(${Math.floor(r * factor)}, ${Math.floor(g * factor)}, ${Math.floor(b * factor)})`;
+  }
+  return color;
+}
+
+// Show character editor when class is selected
+function showClassEditor(clsId) {
+  selectedClass = CLASSES[clsId];
+  
+  const editor = document.querySelector('.character-editor');
+  const cards = document.getElementById('class-cards');
+  
+  if (editor && cards) {
+    editor.style.display = 'block';
+    cards.style.display = 'none';
+    
+    // Update header
+    const header = document.querySelector('.editor-header h3');
+    if (header) header.textContent = `Customize ${selectedClass.name}`;
+    
+    // Refresh customization options
+    setupSkinSelector();
+    setupTrailSelector();
+    setupAuraSelector();
+    
+    // Start preview animation
+    function animatePreview() {
+      updateCharacterPreview();
+      requestAnimationFrame(animatePreview);
+    }
+    animatePreview();
+  }
+}
+
+// Override class card onclick to show editor
+function buildClassSelect() {
+  const list = document.getElementById('class-cards');
+  if (!list) return;
+  
+  list.innerHTML = '';
+  
+  for (const [id, c] of Object.entries(CLASSES)) {
+    const card = document.createElement('div');
+    card.className = 'card class-card';
+    card.style.setProperty('--accent', c.color);
+    card.innerHTML = `
+      <div class="class-glyph" style="background:${c.color}"></div>
+      <h3>${c.name}</h3>
+      <p class="muted">${c.desc}</p>
+      <div class="stats">
+        <span>❤ ${c.hp}</span><span>⚔ ${c.damage}</span><span>🛡 ${c.defense}</span><span>👟 ${c.speed}</span>
+      </div>
+      <p class="ability"><b>${c.ability}</b> — ${c.abilityDesc}</p>
+      <button class="btn primary">Customize ${c.name} →</button>
+    `;
+    card.querySelector('.primary').onclick = () => showClassEditor(id);
+    list.appendChild(card);
+  }
+}
+
+// Start game with selected class and cosmetics
+function startSelectedGame() {
+  if (!selectedClass) return;
+  
+  // Get selected cosmetics
+  const skin = window.getSkin?.() || 'default';
+  const trail = window.getTrail?.() || 'none';
+  const aura = window.getAura?.() || 'none';
+  
+  console.log('Starting game with:', {
+    class: selectedClass.name,
+    skin,
+    trail,
+    aura
+  });
+  
+  // Hide editor and start game
+  const editor = document.querySelector('.character-editor');
+  if (editor) editor.style.display = 'none';
+  
+  hide('class-select');
+  
+  // Initialize game with selected class
+  state.pendingClass = selectedClass.cls || Object.keys(CLASSES).find(k => CLASSES[k].name === selectedClass.name);
+  
+  if (!state.pendingClass) {
+    state.pendingClass = 'knight'; // fallback
+  }
+  
+  // Start chapter
+  startChapter(state.chapterIndex);
+}
 
 // ---------------- party system ----------------
 let currentParty = null;
@@ -1543,6 +1912,38 @@ net?.onMessage = (m) => {
 };
 
 // ---------------- boot ----------------
+// Show start screen with play button
+show('start-screen');
+hide('class-select');
+
+// Play button
+const playBtn = document.getElementById('btn-play');
+if (playBtn) {
+  playBtn.onclick = () => {
+    hide('start-screen');
+    show('class-select');
+    buildClassSelect();
+    setupClassEditor();
+  };
+}
+
+// Back button
+const backBtn = document.getElementById('btn-back-to-start');
+if (backBtn) {
+  backBtn.onclick = () => {
+    hide('class-select');
+    show('start-screen');
+  };
+}
+
+// Start game button
+const startGameBtn = document.getElementById('btn-start-game');
+if (startGameBtn) {
+  startGameBtn.onclick = () => {
+    startSelectedGame();
+  };
+}
+
 buildClassSelect();
 refreshInventory();
 muteOn = game.muted;
