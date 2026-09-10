@@ -51,6 +51,33 @@ button.btn.tiny { padding: 4px 8px; font-size: 11px; }
   letter-spacing: 8px;
 }
 .subtitle { color: var(--muted); letter-spacing: 3px; margin: 0 0 8px; }
+.btn-play {
+  font-size: 30px;
+  padding: 18px 72px;
+  letter-spacing: 6px;
+  background: linear-gradient(180deg, #f6c85a, #d99a25);
+  color: #241703;
+  border: 2px solid #ffe9a8;
+  box-shadow: 0 0 30px rgba(240,192,64,0.45), 0 6px 0 #8a5f10;
+  animation: play-pulse 1.8s ease-in-out infinite;
+}
+.btn-play:hover { transform: scale(1.05); box-shadow: 0 0 45px rgba(240,192,64,0.7), 0 6px 0 #8a5f10; }
+@keyframes play-pulse {
+  0%, 100% { box-shadow: 0 0 25px rgba(240,192,64,0.35), 0 6px 0 #8a5f10; }
+  50% { box-shadow: 0 0 50px rgba(240,192,64,0.65), 0 6px 0 #8a5f10; }
+}
+
+#tutorial-screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); z-index: 60; }
+.tutorial-panel { width: min(460px, 92vw); }
+.tut-step { padding: 6px 0; font-size: 14px; color: var(--muted); }
+.tut-step.done { color: var(--text); }
+#tutorial-tracker {
+  position: fixed; top: 90px; left: 14px; z-index: 40;
+  background: var(--panel); border: 1px solid var(--border);
+  padding: 10px 14px; font-size: 12px; max-width: 240px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+#tutorial-tracker .tut-step { padding: 2px 0; font-size: 12px; }
 #class-cards { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; padding: 0 20px; }
 
 .card {
