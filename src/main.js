@@ -209,6 +209,16 @@ async function netHost() {
   netStatus("Connecting to relay server…");
   net = new Net(defaultServerUrl());
   try { await net.connect(); } catch { netStatus("✗ Cannot reach relay server. Start server/ (npm start) or set ?server=ws://host:port"); return; }
+  
+  // Create a party for this host
+  if (state.playerId) {
+    net.send({
+      t: "party_create",
+      name: state.playerName || `Player ${Math.floor(Math.random() * 1000)}`,
+      partyName: `Party ${Math.floor(Math.random() * 1000)}`
+    });
+  }
+  
   net.onMessage = m => {
     if (m.t === "hosted") {
       net.code = m.code;
@@ -220,6 +230,7 @@ async function netHost() {
     } else if (m.t === "peerLeft") {
       toast(`${m.name} left the world`);
     }
+    // Party messages handled in separate handler
   };
   net.host();
 }
@@ -771,13 +782,104 @@ function checkBestiaryRewards() {
 
 // ---------------- toast ----------------
 let toastT;
-function toast(msg) {
+let toastQueue = [];
+let isProcessingToast = false;
+
+function toast(msg, duration = 2500) {
+  // Add to queue
+  toastQueue.push({ msg, duration, timestamp: Date.now() });
+  
+  // Process queue if not already processing
+  if (!isProcessingToast) {
+    processToastQueue();
+  }
+}
+
+function processToastQueue() {
+  if (toastQueue.length === 0) {
+    isProcessingToast = false;
+    return;
+  }
+  
+  isProcessingToast = true;
+  const { msg, duration } = toastQueue.shift();
+  
   const el = screens.toast;
+  if (!el) {
+    processToastQueue();
+    return;
+  }
+  
   el.textContent = msg;
   el.style.display = "block";
+  el.style.opacity = '1';
+  el.style.transition = 'opacity 0.3s ease';
+  
   clearTimeout(toastT);
-  toastT = setTimeout(() => { el.style.display = "none"; }, 2500);
+  toastT = setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => {
+      el.style.display = "none";
+      processToastQueue();
+    }, 300);
+  }, duration);
 }
+
+// Quick action: show notifications for important events
+function showNotification(title, message, type = 'info') {
+  // Create a notification element
+  const notif = document.createElement('div');
+  notif.className = `notification ${type}`;
+  notif.style.cssText = `
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 2px solid;
+    border-color: ${type === 'success' ? 'var(--gold)' : type === 'error' ? '#f05050' : 'var(--border)'};
+    color: var(--text);
+    padding: 12px 24px;
+    border-radius: 8px;
+    z-index: 70;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    animation: notifSlideIn 0.3s ease;
+  `;
+  
+  notif.innerHTML = `
+    <div style="font-size:18px;margin-bottom:4px">${type === 'success' ? '✅' : type === 'error' ? '❌' : '📢'} ${title}</div>
+    <div style="color:var(--muted);font-weight:normal;font-size:12px">${message}</div>
+  `;
+  
+  document.body.appendChild(notif);
+  
+  // Auto remove after 5 seconds
+  setTimeout(() => {
+    notif.style.transform = 'translateX(-50%) translateY(-20px)';
+    notif.style.opacity = '0';
+    notif.style.transition = 'all 0.3s ease';
+    setTimeout(() => notif.remove(), 300);
+  }, 5000);
+}
+
+// Add CSS animation for notifications
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes notifSlideIn {
+    from {
+      transform: translateX(-50%) translateY(-20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  }
+`;
+document.head.appendChild(style);
 
 // ---------------- HUD ----------------
 function updateHUD() {
@@ -1132,11 +1234,165 @@ $("#net-close")?.addEventListener("click", () => {
   state.uiOpen = false;
 });
 
+// ---------------- party system ----------------
+let currentParty = null;
+
+function setupPartyUI() {
+  // Party panel (add to net screen or create new party screen)
+  const partyPanel = document.createElement('div');
+  partyPanel.id = 'party-panel';
+  partyPanel.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 12px;
+    width: 280px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    z-index: 15;
+    display: none;
+    font-size: 12px;
+  `;
+  
+  partyPanel.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0;color:var(--gold);font-size:14px">👥 Party</h3>
+      <button class="btn tiny" id="party-close" style="padding:2px 6px">✕</button>
+    </div>
+    <div id="party-info" style="color:var(--muted);margin-bottom:8px">
+      Not in a party
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn tiny" id="party-invite" style="flex:1">Invite Friends</button>
+      <button class="btn tiny" id="party-leave" style="flex:1">Leave</button>
+    </div>
+    <div id="party-members" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)"></div>
+  `;
+  
+  document.body.appendChild(partyPanel);
+  
+  // Party list button in HUD
+  const partyBtn = document.createElement('button');
+  partyBtn.className = 'btn tiny';
+  partyBtn.id = 'btn-party';
+  partyBtn.textContent = '👥 Party';
+  partyBtn.onclick = togglePartyPanel;
+  document.getElementById('hud-btns')?.appendChild(partyBtn);
+  
+  // Event handlers
+  document.getElementById('party-close')?.addEventListener('click', () => {
+    hide('party-panel');
+  });
+  
+  document.getElementById('party-leave')?.addEventListener('click', () => {
+    if (net && state.partyId) {
+      net.send({ t: 'party_leave' });
+    }
+  });
+  
+  document.getElementById('party-invite')?.addEventListener('click', () => {
+    toast('📋 Party ID: ' + (state.partyId || 'None'));
+  });
+}
+
+function togglePartyPanel() {
+  const panel = document.getElementById('party-panel');
+  if (!panel) return;
+  
+  const isOpen = panel.style.display === 'block';
+  panel.style.display = isOpen ? 'none' : 'block';
+  
+  if (!isOpen) {
+    updatePartyUI();
+  }
+}
+
+function updatePartyUI() {
+  const info = document.getElementById('party-info');
+  const members = document.getElementById('party-members');
+  
+  if (!info || !members) return;
+  
+  if (currentParty) {
+    info.innerHTML = `
+      <div style="color:var(--gold);font-weight:bold">${currentParty.name}</div>
+      <div style="color:var(--muted);font-size:11px">ID: ${currentParty.id} · Leader: ${currentParty.leaderName}</div>
+    `;
+    
+    members.innerHTML = currentParty.members.map(m => `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <div style="width:8px;height:8px;border-radius:50%;background:${m.id === state.playerId ? 'var(--gold)' : 'var(--border)'}"></div>
+        <span>${m.name} ${m.id === state.playerId ? '(You)' : ''}${m.id === currentParty.leader ? ' 👑' : ''}</span>
+      </div>
+    `).join('');
+  } else {
+    info.innerHTML = '<div style="color:var(--muted)">Not in a party</div>';
+    members.innerHTML = '';
+  }
+}
+
+// Party network handlers
+net?.onMessage = (m) => {
+  // ... existing handlers ...
+  
+  if (m.t === 'party_created') {
+    state.partyId = m.partyId;
+    currentParty = m.party;
+    currentParty.leaderName = m.leaderName || 'You';
+    show('party-panel');
+    updatePartyUI();
+    toast(`✅ Party created: ${m.party.name}`);
+  }
+  
+  if (m.t === 'party_joined') {
+    state.partyId = m.partyId;
+    currentParty = m.party;
+    currentParty.leaderName = m.party.members.find(p => p.id === m.party.leader)?.name || 'Unknown';
+    show('party-panel');
+    updatePartyUI();
+    toast(`✅ Joined party: ${m.party.name}`);
+  }
+  
+  if (m.t === 'party_left' || m.t === 'party_error') {
+    state.partyId = null;
+    currentParty = null;
+    hide('party-panel');
+    if (m.t === 'party_error') {
+      toast(`❌ ${m.error}`);
+    }
+  }
+  
+  if (m.t === 'party_member_joined') {
+    if (currentParty) {
+      currentParty.members.push(m.member);
+      updatePartyUI();
+      toast(`👥 ${m.member.name} joined the party!`);
+    }
+  }
+  
+  if (m.t === 'party_member_left') {
+    if (currentParty) {
+      currentParty.members = currentParty.members.filter(p => p.id !== m.memberId);
+      if (currentParty.members.length === 0) {
+        state.partyId = null;
+        currentParty = null;
+        hide('party-panel');
+      }
+      updatePartyUI();
+      toast(`👥 ${m.memberId} left the party`);
+    }
+  }
+};
+
 // ---------------- boot ----------------
 buildClassSelect();
 refreshInventory();
 muteOn = game.muted;
 updateMuteBtn();
+
+// Setup party UI
+setupPartyUI();
 
 // Initialize sound on first interaction
 const initAudio = () => {
