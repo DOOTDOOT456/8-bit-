@@ -25,8 +25,6 @@ const state = {
   prestigeRanks: {},     // upgradeId -> rank
   bestDepth: 0,
   totalKills: 0,
-  tutorialDone: false,
-  tutorial: null,
 };
 
 // ---------------- daily quests ----------------
@@ -77,7 +75,6 @@ function saveGame() {
       inventory: state.inventory,
       equipped: state.equipped,
       chapterIndex: state.chapterIndex,
-      tutorialDone: state.tutorialDone ?? false,
     }));
   } catch (e) { /* storage unavailable */ }
 }
@@ -99,7 +96,6 @@ function loadGame() {
       inventory: s.inventory ?? state.inventory,
       equipped: s.equipped ?? state.equipped,
       chapterIndex: s.chapterIndex ?? 0,
-      tutorialDone: s.tutorialDone ?? false,
     });
     return true;
   } catch (e) { return false; }
@@ -126,7 +122,6 @@ game.prestige = prestigeStats();
 // ---------------- screens ----------------
 const screens = {
   net: $("#net-screen"),
-  tutorial: $("#tutorial-screen"),
   classSelect: $("#class-select"),
   story: $("#story-screen"),
   hud: $("#hud"),
@@ -142,13 +137,6 @@ const screens = {
 
 function show(id) { if (screens[id]) screens[id].style.display = "flex"; }
 function hide(id) { if (screens[id]) screens[id].style.display = "none"; }
-
-// ---------------- big play button ----------------
-$("#btn-play")?.addEventListener("click", () => {
-  $("#btn-play").style.display = "none";
-  $("#class-prompt").style.display = "block";
-  $("#class-cards").style.display = "flex";
-});
 function hideAllUI() { ["classSelect", "story", "inventory", "questLog", "death", "victory"].forEach(hide); }
 
 // ---------------- class select ----------------
@@ -168,7 +156,6 @@ function buildClassSelect() {
       </div>
       <p class="ability"><b>${c.ability}</b> — ${c.abilityDesc}</p>
       <button class="btn primary">Solo — ${c.name}</button>
-      <button class="btn co-op-btn">Co-op — ${c.name}</button>
       <button class="btn net-btn">🌐 Play Online — ${c.name}</button>
     `;
     card.querySelector(".primary").onclick = () => chooseClass(id, "solo");
@@ -181,11 +168,6 @@ function buildClassSelect() {
 function chooseClass(id, mode = "solo") {
   game.prestige = prestigeStats();
   game.initPlayer(id);
-  if (mode === "coop") {
-    game.multiplayer = true;
-    const others = Object.keys(CLASSES).filter(c => c !== id);
-    game.initPlayer2(others[Math.floor(Math.random() * others.length)]);
-  }
   loadGame();
   ensureDailyQuests();
   state.pendingClass = id;
@@ -197,7 +179,6 @@ function chooseClass(id, mode = "solo") {
     netHost();
   } else {
     startChapter(state.chapterIndex);
-    initTutorial();
   }
 }
 
@@ -332,6 +313,8 @@ function startChapter(i) {
   const ch = getChapter(i);
   game.depth = ch.depth ?? (i + 1);
   game.startChapter(ch);
+  // offline: try to resume from last checkpoint for this class
+  if (!game.multiplayer) game.loadCheckpointOrSpawn(ch);
   game.onKillCheckHooked = true;
   // hook kill check
   const origKill = game.killEnemy.bind(game);
@@ -351,7 +334,6 @@ function startChapter(i) {
     if (e.type === "golem") bumpDaily("golem");
     if (e.type === "wolf") bumpDaily("wolf");
     if (e.type === "wraith") bumpDaily("wraith");
-    tutEvent("kill");
     saveGame();
   };
   if (game.depth > state.bestDepth) { state.bestDepth = game.depth; saveGame(); }
@@ -375,9 +357,6 @@ $("#story-continue").onclick = () => {
 // ---------------- death / victory ----------------
 game.onEvent = ev => {
   switch (ev.type) {
-    case "potionUsed":
-      tutEvent("potion");
-      break;
     case "playerDeath": {
       state.uiOpen = true;
       show("death");
@@ -391,7 +370,6 @@ game.onEvent = ev => {
         toast(`📖 Bestiary: ${BOSSES[qb].name} revealed!`);
       } else if (qb) state.bestiary["boss_" + qb].kills++;
       bumpDaily("boss");
-      tutEvent("boss");
       saveGame();
       const ch = CHAPTERS[state.chapterIndex];
       setTimeout(() => {
@@ -440,30 +418,33 @@ game.onEvent = ev => {
       break;
     case "ability":
       break;
+    case "toggleMute":
+      updateMuteBtn();
+      break;
+    case "revivedAtCheckpoint":
+      toast("🔥 Revived at your campfire — the Ember remembers you.");
+      break;
+    case "revivedAtSpawn":
+      toast("⚰️ You rise again at the outpost — this story never ends.");
+      break;
+    case "buffApplied":
+      toast(`🍗 Buff: ${ev.name} — ${ev.desc}`);
+      break;
+    case "buffExpired":
+      toast("🍗 Your food buff faded.");
+      break;
   }
 };
 
 $("#death-retry").onclick = () => {
   hide("death");
   state.uiOpen = false;
-  const p = game.player;
-  p.hp = p.maxHp;
-  const [sx, sy] = CHAPTERS[state.chapterIndex].map.spawn;
-  p.x = sx * 32 + 16; p.y = sy * 32 + 16;
-  game.boss = null; game.bossDefeated = false;
-  game.enemies = game.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) > 300);
-};
-
-$("#death-retry").onclick = () => {
-  hide("death");
-  state.uiOpen = false;
-  const p = game.player;
-  p.hp = p.maxHp;
-  const ch = getChapter(state.chapterIndex);
-  const [sx, sy] = ch.map.spawn;
-  p.x = sx * 32 + 16; p.y = sy * 32 + 16;
-  game.boss = null; game.bossDefeated = false; game.bossLooted = false;
-  game.enemies = game.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) > 300);
+  // infinite retry: first try reviving at your last campfire (checkpoint),
+  // otherwise fall back to the chapter spawn.
+  const revived = game.multiplayer ? false : game.reviveAtCheckpoint();
+  if (!revived) {
+    game.retryAtSpawn();
+  }
   saveGame();
 };
 $("#death-menu").onclick = () => location.reload();
@@ -577,15 +558,16 @@ function refreshInventory() {
       };
       cell.appendChild(btn);
     }
-    if (item.type === "potion") {
+    if (item.type === "potion" || item.type === "food") {
       const btn = document.createElement("button");
       btn.className = "btn tiny";
       btn.textContent = "Use";
       btn.onclick = () => {
-        if (item.heal) game.healPlayer(item.heal);
-        if (item.buff) game.buffs.strength = item.buff * 60;
-        removeInv(id, 1);
-        toast(`Used ${item.name}`);
+        if (game.useItemFromInv(id)) {
+          toast(`Used ${item.name}`);
+        } else {
+          toast("Nothing left to use.");
+        }
       };
       cell.appendChild(btn);
     }
@@ -614,6 +596,7 @@ function refreshEquipped() {
     ❤ HP <b>${Math.ceil(game.player?.hp ?? 0)}/${game.player?.maxHp ?? 0}</b> &nbsp;
     ⚔ Dmg <b>${game.damage}</b> &nbsp; 🛡 Def <b>${game.defenseTotal}</b> &nbsp;
     ⭐ Lv <b>${game.player?.level ?? 1}</b> (${game.player?.xp ?? 0}/${game.player?.xpNext ?? 60})
+    ${game.food ? `<br>🍗 ${ITEMS[game.food.id]?.name ?? "Food"} buff ${Math.ceil(game.food.remaining/60)}s` : ""}
   `;
 }
 
@@ -809,10 +792,7 @@ function updateHUD() {
 }
 
 // ability key
-window.addEventListener("keydown", e => {
-  if (e.code === "KeyF") { game.useAbility(); tutEvent("ability"); }
-  if (e.code === "KeyW" || e.code === "KeyA" || e.code === "KeyS" || e.code === "KeyD" || e.code.startsWith("Arrow")) tutEvent("move");
-});
+window.addEventListener("keydown", e => { if (e.code === "KeyF") game.useAbility(); });
 
 // ---------------- UI toggles ----------------
 function toggleScreen(name, buildFn) {
@@ -829,75 +809,26 @@ function toggleScreen(name, buildFn) {
   };
 }
 
-$("#btn-inv").onclick = () => { tutEvent("inventory"); toggleScreen("inventory", () => { refreshInventory(); refreshCrafting(); })(); };
+$("#btn-inv").onclick = toggleScreen("inventory", () => { refreshInventory(); refreshCrafting(); });
 $("#btn-quest").onclick = toggleScreen("questLog", refreshQuests);
 $("#btn-bestiary").onclick = toggleScreen("bestiary", refreshBestiary);
+
+let muteOn = false;
+function updateMuteBtn() {
+  const b = $("#btn-mute");
+  if (!b) return;
+  b.textContent = muteOn ? "🔇 Muted" : "🔊 Sound";
+  b.style.color = muteOn ? "var(--gold)" : "";
+}
+$("#btn-mute").onclick = () => {
+  muteOn = !muteOn;
+  game.muted = muteOn;
+  updateMuteBtn();
+};
 $("#bestiary-close").onclick = () => { hide("bestiary"); state.uiOpen = false; };
 $("#dialogue-ok")?.addEventListener("click", () => { state.uiOpen = false; });
 $("#inv-close").onclick = () => { hide("inventory"); state.uiOpen = false; };
 $("#quest-close").onclick = () => { hide("questLog"); state.uiOpen = false; };
-
-// ---------------- tutorial ----------------
-const TUTORIAL_STEPS = [
-  { id: "move",   text: "Move with <b>WASD</b> or arrow keys",           done: s => s.tutMoved },
-  { id: "attack", text: "Attack with <b>left click</b> — slay 3 enemies", done: s => s.tutKills >= 3 },
-  { id: "ability",text: "Use your class ability with <b>F</b>",          done: s => s.tutAbility },
-  { id: "potion", text: "Drink a health potion with <b>Q</b>",           done: s => s.tutPotion },
-  { id: "inv",    text: "Open your <b>Inventory & Crafting</b> with <b>E</b>", done: s => s.tutInventory },
-  { id: "kills",  text: "Defeat the chapter boss to complete the quest",  done: s => s.tutBoss },
-];
-
-function initTutorial() {
-  if (state.tutorialDone) return;
-  state.tutorial = { moved: false, kills: 0, ability: false, potion: false, inventory: false, boss: false };
-  refreshTutorial();
-  show("tutorial");
-  state.uiOpen = true;
-}
-
-function tutEvent(kind, data = {}) {
-  const t = state.tutorial;
-  if (!t || state.tutorialDone) return;
-  if (kind === "move") t.moved = true;
-  if (kind === "kill") t.kills += 1;
-  if (kind === "ability") t.ability = true;
-  if (kind === "potion") t.potion = true;
-  if (kind === "inventory") t.inventory = true;
-  if (kind === "boss") t.boss = true;
-  refreshTutorial();
-  if (TUTORIAL_STEPS.every(s => s.done(t))) {
-    state.tutorialDone = true;
-    saveGame();
-    toast("🎓 Tutorial complete — Emberfall awaits!");
-    setTimeout(() => { hide("tutorialTracker"); }, 3000);
-  }
-}
-
-function refreshTutorial() {
-  const t = state.tutorial;
-  if (!t) return;
-  const list = TUTORIAL_STEPS.map(s => {
-    const ok = s.done(t);
-    return `<div class="tut-step ${ok ? "done" : ""}">${ok ? "✅" : "⬜"} ${s.text}</div>`;
-  }).join("");
-  $("#tutorial-steps").innerHTML = list;
-  const tracker = $("#tutorial-tracker");
-  tracker.style.display = "block";
-  $("#tracker-steps").innerHTML = TUTORIAL_STEPS.map(s => {
-    const ok = s.done(t);
-    return `<div class="tut-step ${ok ? "done" : ""}" style="font-size:12px">${ok ? "✅" : "⬜"} ${s.text.replace(/<\/?b>/g, "")}</div>`;
-  }).join("");
-  if (TUTORIAL_STEPS.every(s => s.done(t))) show("tutorial");
-}
-
-$("#tutorial-close").onclick = () => { hide("tutorial"); state.uiOpen = false; };
-$("#tutorial-skip").onclick = () => {
-  state.tutorialDone = true;
-  saveGame();
-  hide("tutorial");
-  hide("tutorialTracker");
-  state.uiOpen = false;
-};
 
 // ---------------- netplay buttons ----------------
 $("#btn-net-host")?.addEventListener("click", () => { if (!net) netHost(); });
@@ -912,6 +843,8 @@ $("#net-close")?.addEventListener("click", () => {
 // ---------------- boot ----------------
 buildClassSelect();
 refreshInventory();
+muteOn = game.muted;
+updateMuteBtn();
 const canvas = $("#game");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;

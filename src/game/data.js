@@ -75,12 +75,24 @@ export const ITEMS = {
   aegis:        { name: "Aegis of Embers",  type: "armor",  rarity: 4, color: "#f0a050", def: 16, speed: 0.2, desc: "Armor of the first flame. +16 def, +0.2 speed." },
   phoenix_heart:{ name: "Phoenix Heart",    type: "artifact", rarity: 4, color: "#ff6040", cd: 420, effect: "revive", desc: "Once per fight, revive with 50% HP instead of dying." },
   sigil_of_depth:{ name: "Sigil of the Deep", type: "artifact", rarity: 4, color: "#40e0b0", cd: 300, effect: "dash", desc: "Dash through the dark, 1.5x farther." },
+
+  // ---- Food: consumable buff items ----
+  roasted_meat: { name: "Roasted Meat",      type: "food", rarity: 0, color: "#d08050", heal: 30, buff: 5,  desc: "Warms you. +5 damage for 15s." },
+  wolf_stew:    { name: "Wolf Stew",        type: "food", rarity: 1, color: "#a06040", heal: 45, buff: 10, desc: "Rich and hearty. +10 damage for 20s." },
+  ember_bread:  { name: "Ember Bread",      type: "food", rarity: 2, color: "#f0a040", heal: 60, buff: 15, fire: true, desc: "Baked with ember shards. Fire buff." },
+  void_cake:    { name: "Void Cake",        type: "food", rarity: 3, color: "#a080e0", heal: 80, buff: 25, desc: "Dense and dark. Big damage boost." },
 };
 
 // ---------------------- RECIPES ----------------------
 export const RECIPES = [
+  // consumables
   { out: "health_pot",    count: 2, cost: { wolf_pelt: 1, ember_shard: 1 } },
   { out: "strength_pot",  count: 1, cost: { ember_shard: 3, crystal: 1 } },
+  { out: "roasted_meat",  count: 2, cost: { iron_chunk: 2, wolf_pelt: 1 } },
+  { out: "wolf_stew",     count: 1, cost: { roasted_meat: 1, wolf_pelt: 2 } },
+  { out: "ember_bread",   count: 1, cost: { roasted_meat: 1, ember_shard: 4, bone: 1 } },
+  { out: "void_cake",     count: 1, cost: { ember_bread: 1, crystal: 2, bone: 2 } },
+  // gear
   { out: "iron_sword",    count: 1, cost: { iron_chunk: 4 } },
   { out: "iron_mail",     count: 1, cost: { iron_chunk: 5, wolf_pelt: 2 } },
   { out: "hunter_bow",    count: 1, cost: { iron_chunk: 3, wolf_pelt: 3 } },
@@ -123,11 +135,6 @@ export const BOSSES = {
     xp: 500, drops: { crystal: [3, 5], boss_heart: 2 },
     phases: 3, ranged: true, projSpeed: 4, projColor: "#c080f0",
   },
-  spiderling: { name: "Spiderling", hp: 18, dmg: 5, speed: 2.0, color: "#8a5a7a", r: 6, xp: 5, aggro: 300, contact: true },
-  wraith:     { name: "Void Wraith", hp: 55, dmg: 14, speed: 1.6, color: "#7050a0", r: 11, xp: 45, aggro: 260, contact: false, ranged: true, projSpeed: 4, projColor: "#b080f0", fire: true },
-  frostborn:  { name: "Frostborn", hp: 70, dmg: 13, speed: 1.2, color: "#70b0e0", r: 12, xp: 50, aggro: 200, contact: true },
-  cinderbeast:{ name: "Cinder Beast", hp: 85, dmg: 18, speed: 1.7, color: "#e05020", r: 13, xp: 65, aggro: 230, contact: true },
-  abomination:{ name: "Abyss Abomination", hp: 130, dmg: 22, speed: 1.0, color: "#30a080", r: 15, xp: 90, aggro: 220, contact: true },
 };
 
 
@@ -300,16 +307,25 @@ export const DEEP_LOOT = [
 
 // Enemy loot table: chance to drop item on death
 export const LOOT_TABLE = {
-  slime:    { ember_shard: 0.4 },
-  zombie:   { iron_chunk: 0.3, health_pot: 0.08 },
-  skeleton: { bone: 0.5, iron_chunk: 0.15 },
-  imp:      { ember_shard: 0.5, health_pot: 0.06 },
-  wolf:     { wolf_pelt: 0.5 },
-  golem:    { iron_chunk: 0.6, crystal: 0.1 },
-  spiderling: { bone: 0.2 },
-  // Endless-depth enemies
+  slime:       { ember_shard: 0.4 },
+  zombie:      { iron_chunk: 0.3, health_pot: 0.08 },
+  skeleton:    { bone: 0.5, iron_chunk: 0.15 },
+  imp:         { ember_shard: 0.5, health_pot: 0.06 },
+  wolf:        { wolf_pelt: 0.5 },
+  golem:       { iron_chunk: 0.6, crystal: 0.1 },
+  spiderling:  { bone: 0.2 },
   wraith:      { crystal: 0.35, ember_shard: 0.3 },
   frostborn:   { iron_chunk: 0.4, wolf_pelt: 0.2 },
   cinderbeast: { ember_shard: 0.6, health_pot: 0.1 },
   abomination: { crystal: 0.25, boss_heart: 0.05, bone: 0.4 },
 };
+
+// Focused (elite) enemies for the descent — unlocked via the champion seal per chapter.
+// These are separate from the base ENEMY_TYPES and only spawn when the chapter is cleared.
+export const ELITE_ENEMIES = [
+  { type: "wraith",      count: 2 },
+  { type: "frostborn",   count: 2 },
+  { type: "cinderbeast", count: 2 },
+  { type: "abomination", count: 1 },
+];
+

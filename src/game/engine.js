@@ -1,7 +1,7 @@
 // ============================================================
 //  EMBERFALL — core engine
 // ============================================================
-import { ITEMS, ENEMY_TYPES, BOSSES, LOOT_TABLE, CLASSES, RARITY_COLORS, DEEP_LOOT } from "./data.js";
+import { ITEMS, ENEMY_TYPES, BOSSES, LOOT_TABLE, CLASSES, RARITY_COLORS, DEEP_LOOT, ELITE_ENEMIES } from "./data.js";
 import { generateMap, isWall, circleHitsWall } from "./world.js";
 
 // Depth scaling: every endless chapter below depth 3 multiplies enemy stats.
@@ -61,6 +61,17 @@ export class Game {
     this.remoteSeen = 0;
     this.netBoss = null;
     this.netP2 = null;
+
+    // offline-mode features
+    this.checkpoint = null;        // {x, y} last safe spot
+    this.food = null;              // active food buff: {dmg, heal, fire, remaining}
+    this.foodTimer = null;
+    this.lastSaveFrame = 0;
+    this.saveEvery = 1800;        // ~30s at 60fps
+    this.chapterCleared = false;
+    this.deadTimer = 0;
+    this.muted = false;
+    this.lightingWarning = 0;     // countdown frames for dim/bright warnings
   }
 
   startChapter(chapter) {
@@ -83,12 +94,84 @@ export class Game {
     this.timeOfDay = 0.3;
     this.spawnEnemies();
     this.onEvent({ type: "chapterStart", chapter });
+    this.chapterCleared = false;
+    this.scanChests();
   }
 
+  // ---------- offline helpers ----------
+  autoSave() {
+    if (!this.map || !this.player) return;
+    const p = this.player;
+    const ch = this.chapter;
+    try {
+      localStorage.setItem("emberfall_checkpoints_v1", JSON.stringify({
+        chapterIndex: this.state.chapterIndex,
+        x: Math.round(p.x), y: Math.round(p.y),
+        hp: Math.round(p.hp), maxHp: p.maxHp,
+        inv: p.invuln > 0, facing: p.facing, level: p.level,
+        cls: p.cls, xp: p.xp, xpNext: p.xpNext,
+        equipped: this.state.equipped,
+        inventory: this.state.inventory,
+        food: this.food ? { dmg: this.food.dmg, heal: this.food.heal, fire: this.food.fire, remaining: this.food.remaining } : null,
+        chapterCleared: this.chapterCleared,
+        timeOfDay: this.timeOfDay, dayNum: this.dayNum,
+        questKills: this.questKills, killCount: this.killCount,
+        prestige: this.prestige,
+      }));
+    } catch (e) { /* storage unavailable */ }
+  }
+
+  loadCheckpointOrSpawn(chapter) {
+    try {
+      const raw = localStorage.getItem("emberfall_checkpoints_v1");
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (s.chapterIndex === this.state.chapterIndex && s.cls === this.player.cls) {
+          const p = this.player;
+          p.x = s.x; p.y = s.y; p.hp = s.hp; p.maxHp = s.maxHp;
+          p.invuln = s.inv ? 30 : 0; p.facing = s.facing; p.level = s.level;
+          p.xp = s.xp; p.xpNext = s.xpNext;
+          this.state.equipped = s.equipped || this.state.equipped;
+          this.state.inventory = s.inventory || this.state.inventory;
+          if (s.food) {
+            this.food = { dmg: s.food.dmg, heal: s.food.heal, fire: s.food.fire, remaining: s.food.remaining };
+            this.foodTimer = 1;
+          }
+          if (typeof s.timeOfDay === "number") this.timeOfDay = s.timeOfDay;
+          if (typeof s.dayNum === "number") this.dayNum = s.dayNum;
+          if (typeof s.questKills === "number") this.questKills = s.questKills;
+          if (typeof s.killCount === "number") this.killCount = s.killCount;
+          this.chapterCleared = !!s.chapterCleared;
+          if (this.food && !this.foodTimer) this.foodTimer = 1;
+          return true;
+        }
+      }
+    } catch (e) { /* ignore corrupt save */ }
+    return false;
+  }
+
+  clearCheckpoint() {
+    try { localStorage.removeItem("emberfall_checkpoints_v1"); } catch (e) {}
+  }
+
+  setCheckpoint(x, y) {
+    this.checkpoint = { x, y };
+    this.autoSave();
+    this.onEvent({ type: "checkpoint", x, y });
+  }
+
+
   spawnEnemies() {
+    // core chapter enemies
     const cfg = this.chapter.map.enemies;
     for (const [type, count] of Object.entries(cfg)) {
       for (let i = 0; i < count; i++) this.spawnEnemy(type);
+    }
+    // tier 2 (level-2 scaling) enemies if chapter cleared
+    if (this.chapterCleared) {
+      for (const e of ELITE_ENEMIES) {
+        for (let i = 0; i < e.count; i++) this.spawnEnemy(e.type);
+      }
     }
   }
 
@@ -225,8 +308,17 @@ export class Game {
     const w = this.equipped.weapon && ITEMS[this.equipped.weapon];
     if (w && w.dmg) d += w.dmg;
     if (this.buffs.strength > 0) d += 10;
+    if (this.food && this.food.dmg > 0) d += this.food.dmg;
     d += (this.prestige?.damage ?? 0);
     return d;
+  }
+
+  // Damage with food-driven fire application: food with fire=true sets player on fire briefly
+  // and any weapon with fire=true applies ignite to enemies hit.
+  fireSourceForHit() {
+    if (this.food && this.food.fire) return true;
+    const w = this.equipped.weapon && ITEMS[this.equipped.weapon];
+    return !!(w && w.fire);
   }
   get defenseTotal() {
     let d = this.player.defense;
@@ -260,6 +352,10 @@ export class Game {
       if (e.code === "KeyE") this.onEvent({ type: "toggleInventory" });
       if (e.code === "KeyQ") this.usePotion("health_pot");
       if (e.code === "KeyR") this.useArtifact();
+      // field skills (offline): G dash, H mark camp
+      if (e.code === "KeyG") this.fieldSkillDash();
+      if (e.code === "KeyH") this.fieldSkillMark();
+      if (e.code === "KeyM") { this.muted = !this.muted; this.onEvent({ type: "toggleMute" }); }
     });
     window.addEventListener("keyup", e => { this.keys[e.code] = false; });
     this.canvas.addEventListener("mousemove", e => {
@@ -270,6 +366,80 @@ export class Game {
     this.canvas.addEventListener("mousedown", () => { this.mouse.down = true; });
     window.addEventListener("mouseup", () => { this.mouse.down = false; });
   }
+
+  fieldSkillDash() {
+    const p = this.player;
+    if (!this.map || !p) return;
+    const a = p.facing || 0;
+    const reach = 12;
+    for (let i = 0; i < 6; i++) {
+      if (!circleHitsWall(this.map, p.x + Math.cos(a) * reach, p.y + Math.sin(a) * reach, p.r)) {
+        p.x += Math.cos(a) * reach; p.y += Math.sin(a) * reach;
+      }
+    }
+    p.invuln = 15;
+    for (let j = 0; j < 10; j++) this.particles.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3, life: 15, color: "#80e0f0", r: 3 });
+    this.onEvent({ type: "fieldSkill", name: "Dash (G)" });
+  }
+
+  fieldSkillMark() {
+    // place a campfire waypoint near you; resets checkpoint to here and reveals map edge
+    if (!this.map || !this.player) return;
+    const p = this.player;
+    this.setCheckpoint(Math.round(p.x), Math.round(p.y));
+    for (let j = 0; j < 20; j++) this.particles.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 40, color: "#f0a040", r: 4 });
+    toastNear(`Campfire lit — waypoint set.`);
+    this.onEvent({ type: "fieldSkill", name: "Campfire (H)" });
+  }
+
+  toastNear(msg) {
+    if (this.muted) return;
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = "block";
+    clearTimeout(this._toastT);
+    this._toastT = setTimeout(() => { el.style.display = "none"; }, 2000);
+  }
+
+  autoCheckpoint() {
+    if (!this.map || !this.player || this.multiplayer) return;
+    const p = this.player;
+    // only set checkpoint in open ground when safe-ish and not in boss arena edge
+    const nearEnemy = this.enemies.some(e => Math.hypot(e.x - p.x, e.y - p.y) < 160);
+    const nearBoss = this.boss && Math.hypot(this.boss.x - p.x, this.boss.y - p.y) < 220;
+    if (nearEnemy || nearBoss) {
+      this.lightingWarning = Math.max(this.lightingWarning, 80);
+      return;
+    }
+    // if player standing still for a moment, drop a checkpoint
+    if (!this.moving) {
+      if (!this._cpTimer) this._cpTimer = 0;
+      this._cpTimer++;
+      if (this._cpTimer > 120) {
+        this.setCheckpoint(Math.round(p.x), Math.round(p.y));
+        this._cpTimer = 0;
+      }
+    } else {
+      this._cpTimer = 0;
+    }
+  }
+
+  updateLightingWarning() {
+    if (!this.map || !this.player) return;
+    const d = this.darknessLevel();
+    if (d > 0.55) {
+      // warn players it's getting dangerous
+      if (this.lightingWarning <= 0) this.toastNear("Night falls — monsters grow bold.");
+      this.lightingWarning = 150;
+    } else if (d < 0.15 && this.timeOfDay > 0.25 && this.timeOfDay < 0.7) {
+      // bright midday, warn faintly that it's safe to explore
+      if (this.lightingWarning <= 0) this.toastNear("Daylight — a good time to push deeper.");
+      this.lightingWarning = 120;
+    }
+    if (this.lightingWarning > 0) this.lightingWarning--;
+  }
+
 
   loop() {
     if (!this.running) return;
@@ -386,12 +556,37 @@ export class Game {
     if (this.buffs.strength > 0) this.buffs.strength--;
     if (this.buffs.burnHeal > 0) { this.buffs.burnHeal--; if (this.frame % 30 === 0) this.healPlayer(2); }
 
+    // food buff: active for a limited window, grants dmg/heal/fire
+    if (this.food) {
+      if (!this.foodTimer) this.foodTimer = 1;
+      if (this.foodTimer % 60 === 0) this.food.remaining--;
+      if (this.food.remaining <= 0) {
+        this.food = null;
+        this.onEvent({ type: "buffExpired", name: "food" });
+      }
+      // passive heal from food (small, steady)
+      if (this.food.heal > 0 && this.frame % 60 === 0) this.healPlayer(Math.max(1, Math.round(this.food.heal / 15)));
+    }
+
+    // infinite retry: quietly revive at spawn after a short window
+    if (p.hp <= 0 && this.deadTimer > 0) {
+      this.deadTimer--;
+      if (this.deadTimer === 0) {
+        this.retryAtSpawn();
+      }
+    }
+
     this.updateEnemies();
     this.updateP2();
     this.updateBoss();
     this.updateProjectiles();
     this.updatePickups();
+    this.interactChests();
+    this.autoSaveTick();
+    this.autoCheckpoint();
     this.updateParticles();
+    // lighting warning (dim/bright)
+    this.updateLightingWarning();
 
     // camera
     const vw = this.canvas.width, vh = this.canvas.height;
@@ -486,12 +681,17 @@ export class Game {
   }
 
   // ------------- damage helpers -------------
-  hurtEnemy(e, dmg) {
+  hurtEnemy(e, dmg, fromFoodFire = false) {
     e.hp -= dmg;
     e.hitFlash = 6;
     this.damageNumbers.push({ x: e.x, y: e.y - 14, v: dmg, t: 40, color: "#fff" });
     const w = this.equipped.weapon && ITEMS[this.equipped.weapon];
     if (w?.lifesteal) this.healPlayer(Math.ceil(dmg * w.lifesteal));
+    // apply burning from food fire or fire weapon
+    if (fromFoodFire || !!(w && w.fire)) {
+      e.fireStab = 120; // burn duration (2s)
+      e.fireDmg = 3;
+    }
     if (e.hp <= 0) this.killEnemy(e);
   }
 
@@ -577,6 +777,38 @@ export class Game {
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + n);
   }
 
+  reviveAtCheckpoint() {
+    if (!this.checkpoint) return false;
+    const p = this.player;
+    p.x = this.checkpoint.x;
+    p.y = this.checkpoint.y;
+    p.hp = Math.max(1, Math.floor(p.maxHp * 0.4));
+    p.invuln = 180;
+    // clear enemies near the checkpoint so you don't die instantly
+    this.enemies = this.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) > 220);
+    this.boss = null;
+    this.bossDefeated = false;
+    this.bossLooted = false;
+    this.loadCheckpointOrSpawn(this.chapter);
+    this.onEvent({ type: "revivedAtCheckpoint" });
+    return true;
+  }
+
+  retryAtSpawn() {
+    if (!this.chapter) return;
+    const [sx, sy] = this.chapter.map.spawn;
+    const p = this.player;
+    p.x = sx * 32 + 16;
+    p.y = sy * 32 + 16;
+    p.hp = p.maxHp;
+    p.invuln = 120;
+    this.enemies = this.enemies.filter(e => Math.hypot(e.x - p.x, e.y - p.y) > 300);
+    this.boss = null;
+    this.bossDefeated = false;
+    this.bossLooted = false;
+    this.onEvent({ type: "revivedAtSpawn" });
+  }
+
   hurtPlayer(dmg, fire) {
     const p = this.player;
     if (p.invuln > 0) return;
@@ -594,7 +826,17 @@ export class Game {
     p.invuln = 40;
     this.hitStop = 4;
     this.damageNumbers.push({ x: p.x, y: p.y - 18, v: actual, t: 40, color: "#f05050" });
-    if (p.hp <= 0) this.onEvent({ type: "playerDeath" });
+    if (p.hp <= 0) {
+      this.deadTimer = 600; // ~10s before auto-retry prompt logic
+      this.onEvent({ type: "playerDeath" });
+    }
+    if (p.hp <= 0 && this.deadTimer > 0) {
+      this.deadTimer--;
+      // after a while, quietly retry at spawn to keep infinite-run feel alive
+      if (this.deadTimer === 0) {
+        this.retryAtSpawn();
+      }
+    }
   }
 
   // ------------- enemies AI -------------
@@ -630,6 +872,15 @@ export class Game {
       if (e.contact && d < e.r + p.r + 2 && e.atkCd <= 0) {
         this.hurtPlayer(e.dmg);
         e.atkCd = 50;
+      }
+      // burning DoT
+      if (e.fireStab > 0) {
+        e.fireStab--;
+        if (this.frame % 20 === 0) {
+          e.hp -= e.fireDmg;
+          this.damageNumbers.push({ x: e.x, y: e.y - 14, v: -e.fireDmg, t: 30, color: "#f08040" });
+          if (e.hp <= 0) this.killEnemy(e);
+        }
       }
     }
   }
@@ -733,6 +984,84 @@ export class Game {
     this.pickups.push({ x: x + (Math.random() - 0.5) * 20, y: y + (Math.random() - 0.5) * 20, item, count });
   }
 
+  // ---------- chests ----------
+  chests = [];
+
+  autoSaveTick() {
+    if (!this.map || !this.player) return;
+    if (this.frame - this.lastSaveFrame >= this.saveEvery) {
+      this.lastSaveFrame = this.frame;
+      this.autoSave();
+    }
+  }
+
+  scanChests() {
+    const m = this.map;
+    this.chests = (m.props || []).filter(p => p.kind === "chest").map(p => ({
+      x: p.x, y: p.y, open: false,
+    }));
+  }
+
+  interactChests() {
+    const p = this.player;
+    if (!p || !this.chests.length) return;
+    for (const c of this.chests) {
+      if (c.open) continue;
+      const d = Math.hypot(p.x - c.x, p.y - c.y);
+      if (d < 36) {
+        c.open = true;
+        // reward: random gear/chance-based loot
+        const reward = this.chestReward();
+        for (const [item, n] of Object.entries(reward)) this.dropPickup(c.x, c.y, item, n);
+        for (let j = 0; j < 24; j++) this.particles.push({ x: c.x, y: c.y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, life: 30, color: "#ffd040", r: 3 });
+        const itemName = Object.keys(reward)[0];
+        this.onEvent({ type: "pickup", item: itemName, count: reward[itemName] });
+        this.toastNear(`Treasure chest opened: ${ITEMS[itemName]?.name ?? itemName} ×${reward[itemName]}`);
+      }
+    }
+  }
+
+  chestReward() {
+    const depth = this.depth || 1;
+    const weights = [
+      { item: "health_pot",    minDepth: 0, maxDepth: 2,  weight: 5 },
+      { item: "iron_chunk",    minDepth: 0, maxDepth: 2,  weight: 4 },
+      { item: "iron_sword",    minDepth: 1, maxDepth: 3,  weight: 3 },
+      { item: "iron_mail",     minDepth: 1, maxDepth: 3,  weight: 3 },
+      { item: "roasted_meat",  minDepth: 0, maxDepth: 4,  weight: 3 },
+      { item: "ember_shard",   minDepth: 1, maxDepth: 5,  weight: 3 },
+      { item: "hunter_bow",    minDepth: 2, maxDepth: 5,  weight: 2 },
+      { item: "strength_pot",  minDepth: 2, maxDepth: 5,  weight: 2 },
+      { item: "ember_wand",    minDepth: 3, maxDepth: 6,  weight: 2 },
+      { item: "shadow_cloak",  minDepth: 3, maxDepth: 6,  weight: 2 },
+      { item: "ember_blade",   minDepth: 4, maxDepth: 7,  weight: 2 },
+      { item: "wind_charm",    minDepth: 4, maxDepth: 7,  weight: 2 },
+      { item: "void_reaver",   minDepth: 6, maxDepth: 99, weight: 1 },
+      { item: "dragon_plate",  minDepth: 6, maxDepth: 99, weight: 1 },
+      { item: "totem",         minDepth: 5, maxDepth: 99, weight: 1 },
+      { item: "ember_bread",   minDepth: 2, maxDepth: 5,  weight: 2 },
+      { item: "wolf_stew",     minDepth: 3, maxDepth: 6,  weight: 2 },
+    ];
+    const candidates = [];
+    let total = 0;
+    for (const c of weights) {
+      if (depth >= c.minDepth && depth <= c.maxDepth) {
+        total += c.weight;
+        candidates.push(c);
+      }
+    }
+    if (!candidates.length) return { health_pot: 1 };
+    let r = Math.random() * total;
+    for (const c of candidates) {
+      r -= c.weight;
+      if (r <= 0) {
+        const count = 1 + Math.floor(Math.random() * 2);
+        return { [c.item]: count };
+      }
+    }
+    return { health_pot: 1 };
+  }
+
   updateParticles() {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const pt = this.particles[i];
@@ -749,13 +1078,39 @@ export class Game {
   }
 
   // ------------- consumables -------------
-  usePotion(id) {
+  useItemFromInv(id) {
     const item = ITEMS[id];
-    if (!item || item.type !== "potion") return;
-    this.onEvent({ type: "consumePotion", id });
+    if (!item) return;
+    if (item.type === "potion") {
+      this.onEvent({ type: "consumePotion", id });
+      if (item.heal) this.healPlayer(item.heal);
+      if (item.buff) this.buffs.strength = item.buff * 60;
+      this.onEvent({ type: "potionUsed", id });
+      return true;
+    }
+    if (item.type === "food") {
+      // remove one from inventory and apply the food buff
+      if ((this.state.inventory[id] || 0) <= 0) return false;
+      this.state.inventory[id] -= 1;
+      if (this.state.inventory[id] <= 0) delete this.state.inventory[id];
+      this.applyFood(item);
+      this.onEvent({ type: "foodEaten", id });
+      return true;
+    }
+    return false;
+  }
+
+  applyFood(item) {
     if (item.heal) this.healPlayer(item.heal);
-    if (item.buff) this.buffs.strength = item.buff * 60;
-    this.onEvent({ type: "potionUsed", id });
+    this.food = {
+      id: item.name,
+      dmg: item.buff || 0,
+      heal: item.heal || 0,
+      fire: !!item.fire,
+      remaining: 900, // 15s at 60fps
+    };
+    this.foodTimer = 1;
+    this.onEvent({ type: "buffApplied", name: item.name, desc: item.desc });
   }
 
   useArtifact() {
@@ -825,7 +1180,22 @@ export class Game {
       if (sx < -40 || sy < -40 || sx > vw + 40 || sy > vh + 40) continue;
       const colors = { trees: "#2a5a24", rocks: "#808088", crystals: "#a050f0" };
       ctx.fillStyle = colors[prop.kind] || "#888";
-      const s = prop.kind === "trees" ? 14 : 10;
+      const s = prop.kind === "trees" ? 14 : prop.kind === "chest" ? 11 : 10;
+      if (prop.kind === "chest") {
+        // draw a little chest
+        ctx.fillStyle = prop.kind === "chest" ? "#8a5a3a" : colors[prop.kind];
+        ctx.fillRect(sx - 8, sy - 6, 16, 12);
+        ctx.fillStyle = "#ffd040";
+        ctx.fillRect(sx - 8, sy - 6, 16, 3);
+        ctx.fillStyle = "#6a3a1a";
+        ctx.fillRect(sx - 7, sy - 3, 14, 9);
+        // lock
+        ctx.fillStyle = "#ffd040";
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
       ctx.beginPath();
       ctx.arc(sx, sy, s, 0, Math.PI * 2);
       ctx.fill();
@@ -957,13 +1327,26 @@ export class Game {
     }
 
     // vignette on low hp
-    if (this.player.hp / this.player.maxHp < 0.3) {
+    if (this.player && this.player.hp / this.player.maxHp < 0.3) {
       const a = 0.25 + Math.sin(this.frame / 10) * 0.1;
       const grd = ctx.createRadialGradient(vw / 2, vh / 2, vh / 3, vw / 2, vh / 2, vh);
       grd.addColorStop(0, "rgba(0,0,0,0)");
       grd.addColorStop(1, `rgba(200,0,0,${a})`);
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, vw, vh);
+    }
+
+    // death haze: when dead, pulse a red overlay and shake the canvas
+    if (this.deadTimer > 0 && this.player && this.player.hp <= 0) {
+      const pulse = Math.sin(this.frame / 8) * 0.15 + 0.25;
+      ctx.fillStyle = `rgba(120,10,10,${pulse})`;
+      ctx.fillRect(0, 0, vw, vh);
+      // simple camera shake
+      const shake = Math.sin(this.frame / 4) * 4 * (this.deadTimer / 600);
+      // we apply shake by nudging the drawn world; rebuild quickly is costly, so apply a translate when drawing player/boss next frame
+      this._deadShake = { x: shake, y: shake };
+    } else {
+      this._deadShake = null;
     }
   }
 
@@ -979,7 +1362,7 @@ export class Game {
 
   renderPlayer(ctx) {
     const p = this.player;
-    const sx = p.x - this.cam.x, sy = p.y - this.cam.y;
+    const sx = p.x - this.cam.x + (this._deadShake?.x || 0), sy = p.y - this.cam.y + (this._deadShake?.y || 0);
     const c = CLASSES[p.cls];
     const bob = Math.sin(this.frame / 6) * (this.moving ? 1.5 : 0.5);
     // shadow
@@ -1006,7 +1389,7 @@ export class Game {
 
   renderBoss(ctx) {
     const b = this.boss;
-    const sx = b.x - this.cam.x, sy = b.y - this.cam.y;
+    const sx = b.x - this.cam.x + (this._deadShake?.x || 0), sy = b.y - this.cam.y + (this._deadShake?.y || 0);
     const base = BOSSES[b.id];
     // shadow
     ctx.fillStyle = "rgba(0,0,0,0.4)";

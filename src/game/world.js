@@ -68,8 +68,19 @@ export function generateMap(cfg) {
       const x = 2 + Math.floor(rnd() * (w - 4));
       const y = 2 + Math.floor(rnd() * (h - 4));
       if (!grid[y * w + x] && !(Math.abs(x - sx) < 5 && Math.abs(y - sy) < 5)) {
-        // don't block corridor completely — props are passable visuals / soft obstacles
-        propList.push({ x: x * 32 + 16 + (rnd() - 0.5) * 10, y: y * 32 + 16 + (rnd() - 0.5) * 10, kind, r: kind === "trees" ? 8 : 6 });
+        // chests need a clear floor cell and a little space; trees/rocks are soft obstacles
+        if (kind === "chest") {
+          // ensure the immediate 3x3 is clear
+          let ok = true;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const cx = x + dx, cy = y + dy;
+              if (cx > 0 && cx < w - 1 && cy > 0 && cy < h - 1 && grid[cy * w + cx] !== 0) ok = false;
+            }
+          }
+          if (!ok) continue;
+        }
+        propList.push({ x: x * 32 + 16 + (rnd() - 0.5) * 10, y: y * 32 + 16 + (rnd() - 0.5) * 10, kind, r: kind === "trees" ? 8 : kind === "chest" ? 9 : 6 });
       }
     }
   }

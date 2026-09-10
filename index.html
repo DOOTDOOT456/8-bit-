@@ -22,6 +22,7 @@
         <button class="btn tiny" id="btn-inv">Inventory (E)</button>
         <button class="btn tiny" id="btn-quest">Quests</button>
         <button class="btn tiny" id="btn-bestiary">Bestiary</button>
+        <button class="btn tiny" id="btn-mute">🔊 Sound</button>
       </div>
     </div>
     <div id="bossbar">
@@ -30,35 +31,13 @@
     </div>
   </div>
 
-  <!-- Class select / main menu -->
+  <!-- Class select -->
   <div id="class-select">
     <p class="subtitle">— AN 8-BIT DUNGEON SAGA —</p>
     <h1 class="title-xl">EMBERFALL</h1>
-    <p class="muted">The Ember has gone dark. The Lich holds the flame.</p>
-    <button class="btn btn-play" id="btn-play">▶&nbsp;&nbsp;PLAY</button>
-    <p class="muted small" id="class-prompt" style="display:none">Choose your hero — Solo, local Co-op, or Play Online:</p>
-    <div id="class-cards" style="display:none"></div>
-    <p class="muted small" style="margin-top:18px;max-width:520px;text-align:center;line-height:1.6">
-      <span style="color:var(--gold)">Co-op:</span> Player 2 joins as a second hero — move with IJKL, auto-attacks nearby foes. Or pick <b>🌐 Play Online</b> to adventure with a friend on another computer.
-    </p>
-  </div>
-
-  <!-- Tutorial -->
-  <div id="tutorial-screen" style="display:none">
-    <div class="panel tutorial-panel">
-      <h2 style="color:var(--gold)">📜 Welcome to Emberfall</h2>
-      <p class="muted small">Complete each step — the tracker appears in the corner of your screen.</p>
-      <div id="tutorial-steps"></div>
-      <div style="display:flex;justify-content:space-between;margin-top:14px">
-        <button class="btn" id="tutorial-skip">Skip Tutorial</button>
-        <button class="btn primary" id="tutorial-close">Let's Go →</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="tutorial-tracker" style="display:none">
-    <h4 style="margin:0 0 6px;color:var(--gold)">📜 Tutorial</h4>
-    <div id="tracker-steps"></div>
+    <p class="muted">Choose your path. The Ember has gone dark.<br>Survive offline: light campfires (H) to set waypoints, cook food for buffs, raid treasure chests, and rise again at your last waypoint when the darkness claims you.</p>
+    <p class="muted small">G to dash · H to light a campfire · M to mute · pick up food, eat it for a damage/heal buff · fire weapons burn foes · death fades, then you rise at your last campfire — forever.</p>
+    <div id="class-cards"></div>
   </div>
 
   <!-- Story -->
