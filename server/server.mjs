@@ -424,8 +424,88 @@ wss.on("connection", ws => {
         }));
         break;
       }
+      
+      // --- Party chat ---
+      case "party_chat": {
+        const playerId = ws.playerId;
+        if (!playerId || !ws.partyId) {
+          ws.send(JSON.stringify({ t: "chat_error", error: "Not in a party" }));
+          break;
+        }
+        
+        const party = getParty(ws.partyId);
+        if (!party) {
+          ws.send(JSON.stringify({ t: "chat_error", error: "Party not found" }));
+          break;
+        }
+        
+        const player = players.get(ws);
+        const message = msg.message?.trim() || '';
+        if (!message) break;
+        
+        // Broadcast to party members
+        const partyRoom = getRoomByPartyId(ws.partyId);
+        if (partyRoom) {
+          relayTo(partyRoom, {
+            t: "party_message",
+            senderId: playerId,
+            senderName: player?.name || 'Player',
+            message,
+            timestamp: Date.now()
+          }, ws);
+        }
+        break;
+      }
+      
+      case "party_whisper": {
+        const playerId = ws.playerId;
+        if (!playerId || !ws.partyId) {
+          ws.send(JSON.stringify({ t: "chat_error", error: "Not in a party" }));
+          break;
+        }
+        
+        const targetId = msg.targetId;
+        const message = msg.message?.trim() || '';
+        if (!message || !targetId) break;
+        
+        // Send whisper to target
+        const targetWs = getWsByPlayerId(targetId);
+        if (targetWs && targetWs.partyId === ws.partyId) {
+          const player = players.get(ws);
+          targetWs.send(JSON.stringify({
+            t: "party_whisper",
+            senderId: playerId,
+            senderName: player?.name || 'Player',
+            message,
+            timestamp: Date.now()
+          }));
+          // Also confirm to sender
+          ws.send(JSON.stringify({
+            t: "party_whisper",
+            senderId: playerId,
+            senderName: player?.name || 'Player',
+            message,
+            timestamp: Date.now(),
+            whisper: true
+          }));
+        } else {
+          ws.send(JSON.stringify({ t: "chat_error", error: "Player not found in your party" }));
+        }
+        break;
+      }
     }
   });
+
+  // Update session on disconnect
+  ws.on("close", () => {
+    // ... existing close logic ...
+    
+    // End session if active
+    if (ws.sessionId) {
+      endSession(ws.sessionId, false); // abandoned
+    }
+  });
+}
 
   // Update session on disconnect
   ws.on("close", () => {

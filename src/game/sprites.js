@@ -553,6 +553,62 @@ export function drawMinimap(ctx, map, playerX, playerY, camX, camY, canvasWidth,
   );
 }
 
+// --- Draw ability effect (visual aura around player) ---
+export function drawAbilityEffect(ctx, playerX, playerY, abilityType, frame, cdRemaining) {
+  if (cdRemaining > 0) return; // No effect on cooldown
+  
+  const ctxSave = ctx.save();
+  
+  switch (abilityType) {
+    case 'knight':
+      // Shield bash aura - blue shield ring
+      ctx.strokeStyle = `rgba(74, 111, 212, ${0.4 + Math.sin(frame / 10) * 0.2})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(playerX, playerY, 50 + Math.sin(frame / 8) * 5, 0, Math.PI * 2);
+      ctx.stroke();
+      
+      // Shield glint
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + Math.sin(frame / 5) * 0.2})`;
+      ctx.beginPath();
+      ctx.arc(playerX - 30, playerY - 20, 8, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+      
+    case 'ranger':
+      // Volley aura - green circular arrows
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + frame / 20;
+        const dist = 40 + Math.sin(frame / 6 + i) * 10;
+        const x = playerX + Math.cos(angle) * dist;
+        const y = playerY + Math.sin(angle) * dist;
+        
+        ctx.fillStyle = `rgba(63, 174, 90, ${0.5 + Math.sin(frame / 8 + i) * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 4 + Math.sin(frame / 10) * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+      
+    case 'pyromancer':
+      // Flame nova aura - fire rings
+      const colors = ['#f06030', '#f08040', '#ffd040', '#fff'];
+      for (let ring = 0; ring < 2; ring++) {
+        const radius = 35 + ring * 20 + Math.sin(frame / 12 + ring) * 8;
+        const gradient = ctx.createRadialGradient(playerX, playerY, 0, playerX, playerY, radius);
+        gradient.addColorStop(0, colors[ring] + '60');
+        gradient.addColorStop(1, colors[ring] + '00');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(playerX, playerY, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+  }
+  
+  ctx.restore();
+}
+
 // --- Draw ability cooldown indicator ---
 export function drawAbilityCd(ctx, x, y, cdRemaining, cdMax) {
   const ratio = cdRemaining / cdMax;
@@ -588,6 +644,60 @@ export function drawAbilityCd(ctx, x, y, cdRemaining, cdMax) {
   ctx.fillText('F', x, y);
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'start';
+}
+
+// --- Draw firing range/cone indicator ---
+export function drawFiringRange(ctx, playerX, playerY, facing, range, attackArc, isRanged) {
+  const ctxSave = ctx.save();
+  
+  if (isRanged) {
+    // Ranged: draw range circle
+    ctx.strokeStyle = 'rgba(255, 208, 64, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(playerX, playerY, range, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Aim line
+    ctx.strokeStyle = 'rgba(255, 208, 64, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(playerX, playerY);
+    ctx.lineTo(playerX + Math.cos(facing) * range, playerY + Math.sin(facing) * range);
+    ctx.stroke();
+  } else {
+    // Melee: draw attack arc
+    const startAngle = facing - attackArc / 2;
+    const endAngle = facing + attackArc / 2;
+    
+    // Arc fill
+    ctx.fillStyle = 'rgba(255, 208, 64, 0.15)';
+    ctx.beginPath();
+    ctx.moveTo(playerX, playerY);
+    ctx.arc(playerX, playerY, range, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Arc border
+    ctx.strokeStyle = 'rgba(255, 208, 64, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(playerX, playerY, range, startAngle, endAngle);
+    ctx.stroke();
+    
+    // Range circle (dashed)
+    ctx.strokeStyle = 'rgba(255, 208, 64, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.arc(playerX, playerY, range, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  
+  ctx.restore();
 }
 
 // --- Draw vignette effect ---
