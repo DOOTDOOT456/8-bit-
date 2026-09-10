@@ -7,6 +7,17 @@
 import { WebSocketServer } from "ws";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
+import {
+  createParty,
+  joinParty,
+  leaveParty,
+  kickMember,
+  transferLeadership,
+  updatePartySettings,
+  getParty,
+  getPlayerParty,
+  getAllParties,
+} from './parties.mjs';
 
 const PORT = process.env.PORT || 8787;
 
@@ -34,6 +45,21 @@ function makeCode() {
   return Array.from(randomBytes(4)).map(b => alphabet[b % alphabet.length]).join("");
 }
 
+// Party to room mapping
+const partyRooms = new Map(); // partyId -> roomCode
+
+function getRoomByPartyId(partyId) {
+  const roomCode = partyRooms.get(partyId);
+  return roomCode ? rooms.get(roomCode) : null;
+}
+
+function getWsByPlayerId(playerId) {
+  for (const [ws] of rooms.entries()) {
+    if (ws.playerId === playerId) return ws;
+  }
+  return null;
+}
+
 function getOrCreateRoom(code) {
   let room = rooms.get(code);
   if (!room) {
@@ -41,6 +67,14 @@ function getOrCreateRoom(code) {
     rooms.set(code, room);
   }
   return room;
+}
+
+// Player info storage
+const players = new Map(); // ws -> { id, name }
+let playerIdCounter = 0;
+
+function generatePlayerId() {
+  return 'P' + String(++playerIdCounter).padStart(5, '0');
 }
 
 function roomState(room) {
@@ -93,6 +127,14 @@ wss.on("connection", ws => {
         ws.roomCode = code;
         ws.isHost = true;
         ws.send(JSON.stringify({ t: "hosted", code }));
+        
+        // If player is in a party, associate the room with the party
+        if (ws.playerId) {
+          const party = getPlayerParty(ws.playerId);
+          if (party) {
+            partyRooms.set(party.id, code);
+          }
+        }
         break;
       }
       case "join": {
@@ -105,6 +147,14 @@ wss.on("connection", ws => {
         ws.isHost = false;
         ws.send(JSON.stringify({ t: "joined", code, ...roomState(r) }));
         relayTo(r, { t: "peerJoined", name: r.clients.get(ws).name }, ws);
+        
+        // If player is in a party, associate the room with the party
+        if (ws.playerId) {
+          const party = getPlayerParty(ws.playerId);
+          if (party) {
+            partyRooms.set(party.id, code);
+          }
+        }
         break;
       }
       case "leave": {
@@ -143,6 +193,149 @@ wss.on("connection", ws => {
         break;
       }
       case "ping": ws.send(JSON.stringify({ t: "pong" })); break;
+      
+      // --- Party commands ---
+      case "party_create": {
+        const playerId = generatePlayerId();
+        players.set(ws, { id: playerId, name: msg.name || 'Player' });
+        ws.playerId = playerId;
+        
+        const party = createParty(playerId, msg.name || 'Player', msg.partyName);
+        ws.send(JSON.stringify({
+          t: "party_created",
+          partyId: party.id,
+          party
+        }));
+        break;
+      }
+      
+      case "party_join": {
+        const playerId = ws.playerId || generatePlayerId();
+        if (!ws.playerId) {
+          players.set(ws, { id: playerId, name: msg.playerName || 'Player' });
+          ws.playerId = playerId;
+        }
+        
+        const result = joinParty(playerId, msg.playerName || 'Player', msg.partyId);
+        ws.send(JSON.stringify({
+          t: result.success ? "party_joined" : "party_error",
+          ...result
+        }));
+        
+        // Notify other party members
+        if (result.success && result.party) {
+          relayTo(getRoomByPartyId(msg.partyId), {
+            t: "party_member_joined",
+            member: { id: playerId, name: msg.playerName || 'Player' }
+          }, ws);
+        }
+        break;
+      }
+      
+      case "party_leave": {
+        const playerId = ws.playerId;
+        if (!playerId) {
+          ws.send(JSON.stringify({ t: "party_error", success: false, error: "Not in a party" }));
+          break;
+        }
+        
+        const result = leaveParty(playerId);
+        ws.send(JSON.stringify({
+          t: result.success ? "party_left" : "party_error",
+          ...result
+        }));
+        
+        // Notify other party members
+        if (result.success && result.party) {
+          relayTo(getRoomByPartyId(result.party.id), {
+            t: "party_member_left",
+            memberId: playerId
+          }, ws);
+        }
+        break;
+      }
+      
+      case "party_kick": {
+        const playerId = ws.playerId;
+        if (!playerId) {
+          ws.send(JSON.stringify({ t: "party_error", success: false, error: "Not in a party" }));
+          break;
+        }
+        
+        const result = kickMember(playerId, msg.targetId);
+        ws.send(JSON.stringify({
+          t: result.success ? "member_kicked" : "party_error",
+          ...result
+        }));
+        
+        // Notify kicked member
+        if (result.success) {
+          const targetWs = getWsByPlayerId(msg.targetId);
+          if (targetWs) {
+            targetWs.send(JSON.stringify({
+              t: "member_kicked",
+              kickedBy: playerId
+            }));
+          }
+        }
+        break;
+      }
+      
+      case "party_transfer": {
+        const playerId = ws.playerId;
+        if (!playerId) {
+          ws.send(JSON.stringify({ t: "party_error", success: false, error: "Not in a party" }));
+          break;
+        }
+        
+        const result = transferLeadership(playerId, msg.newLeaderId);
+        ws.send(JSON.stringify({
+          t: result.success ? "leadership_transfer" : "party_error",
+          ...result
+        }));
+        break;
+      }
+      
+      case "party_settings": {
+        const playerId = ws.playerId;
+        if (!playerId) {
+          ws.send(JSON.stringify({ t: "party_error", success: false, error: "Not in a party" }));
+          break;
+        }
+        
+        const result = updatePartySettings(playerId, msg.settings);
+        ws.send(JSON.stringify({
+          t: result.success ? "party_settings_updated" : "party_error",
+          ...result
+        }));
+        break;
+      }
+      
+      case "party_list": {
+        const parties = getAllParties();
+        ws.send(JSON.stringify({
+          t: "party_list",
+          parties
+        }));
+        break;
+      }
+      
+      case "party_info": {
+        const party = getParty(msg.partyId);
+        if (party) {
+          ws.send(JSON.stringify({
+            t: "party_info",
+            party
+          }));
+        } else {
+          ws.send(JSON.stringify({
+            t: "party_error",
+            success: false,
+            error: "Party not found"
+          }));
+        }
+        break;
+      }
     }
   });
 
@@ -154,6 +347,25 @@ wss.on("connection", ws => {
       const info = room.clients.get(ws);
       room.clients.delete(ws);
       if (info) relayTo(room, { t: "peerLeft", name: info.name });
+    }
+    
+    // Handle party leave on disconnect
+    if (ws.playerId) {
+      const party = getPlayerParty(ws.playerId);
+      if (party) {
+        // Notify party members
+        const partyRoom = getRoomByPartyId(party.id);
+        if (partyRoom) {
+          relayTo(partyRoom, {
+            t: "party_member_left",
+            memberId: ws.playerId,
+            reason: "disconnected"
+          }, ws);
+        }
+        // Remove from party
+        leaveParty(ws.playerId);
+      }
+      players.delete(ws);
     }
   });
 });
