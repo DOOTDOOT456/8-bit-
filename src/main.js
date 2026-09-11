@@ -219,11 +219,12 @@ function buildClassSelect() {
       </div>
       <p class="ability"><b>${c.ability}</b> — ${c.abilityDesc}</p>
       <button class="btn primary">Solo — ${c.name}</button>
-      <button class="btn net-btn">🌐 Play Online — ${c.name}</button>
+      <button class="btn net-btn">🌐 Online — ${c.name}</button>
     `;
-    card.querySelector(".primary").onclick = () => chooseClass(id, "solo");
-    card.querySelector(".co-op-btn").onclick = () => chooseClass(id, "coop");
-    card.querySelector(".net-btn").onclick = () => chooseClass(id, "host");
+    const soloBtn = card.querySelector(".primary");
+    soloBtn && (soloBtn.onclick = () => chooseClass(id, "solo"));
+    const netBtn = card.querySelector(".net-btn");
+    netBtn && (netBtn.onclick = () => chooseClass(id, "host"));
     list.appendChild(card);
   }
 }
