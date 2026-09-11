@@ -38,6 +38,14 @@
     <p class="muted">Choose your path. The Ember has gone dark.<br>Survive offline: light campfires (H) to set waypoints, cook food for buffs, raid treasure chests, and rise again at your last waypoint when the darkness claims you.</p>
     <p class="muted small">G to dash · H to light a campfire · M to mute · pick up food, eat it for a damage/heal buff · fire weapons burn foes · death fades, then you rise at your last campfire — forever.</p>
     <div id="class-cards"></div>
+
+    <div id="class-editor" style="display:none;margin-top:20px;flex-direction:column;align-items:center;gap:12px">
+      <canvas id="char-preview" width="160" height="160" style="border-radius:50%;border:3px solid var(--gold);box-shadow:0 0 30px rgba(240,192,64,0.4)"></canvas>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+        <button class="btn primary" id="btn-start-game">⚔ Start Game</button>
+        <button class="btn" id="btn-back-to-start">← Back</button>
+      </div>
+    </div>
   </div>
 
   <!-- Story -->
