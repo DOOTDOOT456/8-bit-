@@ -1,11 +1,20 @@
 {
   "name": "emberfall-server",
   "version": "1.0.0",
+  "description": "Emberfall netplay relay server - WebSocket multiplayer server with party system and leaderboards",
   "type": "module",
+  "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
   },
+  "keywords": ["emberfall", "game", "multiplayer", "websocket", "netplay", "relay"],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
     "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

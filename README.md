@@ -47,6 +47,11 @@ Every playthrough starts with a choice — and each class plays *completely* dif
 | 🏹 | **Ranger** | Fragile but deadly. Fires piercing arrows from safety. | **Volley** — rain 8 arrows in every direction at once |
 | 🔥 | **Pyromancer** | Play with fire. Win with fire. Hurls incinerating bolts. | **Flame Nova** — detonate in a double ring of flame |
 
+### 🎨 Customize Your Hero
+- **9 Skin Colors** — Default, Dark, Light, Crimson, Sapphire, Emerald, Shadowfire, Dawn, Void
+- **6 Trail Effects** — None, Ember, Frost, Shadow, Gold, Rainbow
+- **6 Aura Effects** — None, Knight's Might, Ranger's Focus, Pyromancer's Fire, Champion's Glory, Legendary Presence
+
 ---
 
 ## ⚔️ Features
@@ -66,13 +71,17 @@ Every playthrough starts with a choice — and each class plays *completely* dif
 ### A Living World
 - 🌗 **Full day/night cycle** — real-time clock with nights that go *dark*, lit only by the glow at your side
 - 🗺️ **Procedurally generated maps** — cellular-automata caves and forests, different every run
-- 👹 **6 enemy types** — slimes, zombies, skeletons, fire imps, dire wolves, and golems, each with its own AI
+- 👹 **10+ enemy types** — slimes, zombies, skeletons, fire imps, dire wolves, golems, spiders, wraiths, frostborn, cinderbeasts, and abominations
 - 📜 **Quest system** — tracked objectives, kill counters, and story rewards per chapter
+- 🏆 **25+ achievements** — track your legend across runs
+- 📖 **Bestiary** — discover and document every creature
+- 🎁 **Daily quests** — same challenges worldwide, every day, with Ember Sigil rewards
 
 ---
 
 ## 🎮 Controls
 
+### Desktop
 | Key | Action |
 |---|---|
 | `W A S D` / arrows | Move |
@@ -82,6 +91,10 @@ Every playthrough starts with a choice — and each class plays *completely* dif
 | `Q` | Drink health potion |
 | `R` | Use artifact |
 | `E` | Open inventory & crafting |
+| `G` | Dash |
+| `H` | Light campfire (set waypoint) |
+| `M` | Toggle sound |
+| `P` | Open prestige menu (after story) |
 | `Esc` | Pause |
 
 ---
@@ -90,9 +103,9 @@ Every playthrough starts with a choice — and each class plays *completely* dif
 
 ### Option 1 — Zero install (fastest)
 
-The repo ships with a **pre-built standalone file**: [`emberfall.html`](./emberfall.html)
+The repo ships with a **pre-built standalone file**: [`index.html`](./index.html)
 
-Download it. Double-click it. Play. That's it — the entire game (engine, art, UI) is inlined in one 43 KB HTML file. It runs from a USB stick, an email attachment, literally anywhere.
+Download it. Double-click it. Play. That's it — the entire game (engine, art, UI) is inlined in one HTML file. It runs from a USB stick, an email attachment, literally anywhere.
 
 ### Option 2 — From source
 
@@ -107,7 +120,7 @@ bun run dev          # dev server at localhost:5173
 
 ```bash
 bun run build                # standard static build → dist/
-bun run build:standalone     # single-file build → emberfall.html
+bun run build:standalone     # single-file build
 ```
 
 ---
@@ -143,6 +156,23 @@ No frameworks. No game engines. No dependencies at runtime. Just clean, modern J
 - **Boss phases are real.** When the boss starts glowing red — save your ability for the dash.
 - **The Warden is a door, not a wall.** Kill 10 creatures in the woods first; the quest will point your way.
 - **Save your potions** for phase transitions, not scrapes. You'll know the moment.
+
+---
+
+## 🎪 Multiplayer Features
+
+### Party System
+- 👥 **Create/Join Parties** — group up with friends for co-op adventures
+- 💬 **Party Chat** — whisper or chat with your party members
+- 👑 **Party Leadership** — transfer leadership, kick members, customize party settings
+- 🏠 **Party-Scoped Rooms** — parties can host private game sessions
+
+### Leaderboards
+- ⚔️ **Kill Leaderboard** — who's slaying the most?
+- 📏 **Depth Leaderboard** — who's diving the deepest?
+- 🏆 **Win Leaderboard** — who's completing the most chapters?
+- ⭐ **XP Leaderboard** — who's gaining the most experience?
+- 💀 **Survival Leaderboard** — best kill-to-death ratios
 
 ---
 
