@@ -498,27 +498,6 @@ wss.on("connection", ws => {
 
   // Update session on disconnect
   ws.on("close", () => {
-    // ... existing close logic ...
-    
-    // End session if active
-    if (ws.sessionId) {
-      endSession(ws.sessionId, false); // abandoned
-    }
-  });
-}
-
-  // Update session on disconnect
-  ws.on("close", () => {
-    // ... existing close logic ...
-    
-    // End session if active
-    if (ws.sessionId) {
-      endSession(ws.sessionId, false); // abandoned
-    }
-  });
-}
-
-  ws.on("close", () => {
     const room = ws.roomCode ? rooms.get(ws.roomCode) : null;
     if (!room) return;
     if (ws.isHost) { room.host = null; relayTo(room, { t: "hostLeft" }); }

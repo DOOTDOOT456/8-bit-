@@ -1917,6 +1917,40 @@ net?.onMessage = (m) => {
 show('start-screen');
 hide('class-select');
 
+// Create missing buttons if they don't exist
+if (!document.getElementById('btn-play')) {
+  const startScreen = document.getElementById('start-screen');
+  if (startScreen) {
+    const playBtn = document.createElement('button');
+    playBtn.id = 'btn-play';
+    playBtn.className = 'btn primary';
+    playBtn.textContent = 'PLAY EMBERFALL';
+    playBtn.style.cssText = 'font-size: 18px; padding: 14px 32px; margin-top: 24px; animation: pulse 2s infinite; cursor: pointer; border: 2px solid var(--gold); color: var(--gold); border-radius: 8px; letter-spacing: 2px;';
+    startScreen.appendChild(playBtn);
+  }
+}
+if (!document.getElementById('btn-back-to-start')) {
+  const classSelect = document.getElementById('class-select');
+  if (classSelect) {
+    const backBtn = document.createElement('button');
+    backBtn.id = 'btn-back-to-start';
+    backBtn.className = 'btn';
+    backBtn.textContent = '← Back';
+    backBtn.style.cssText = 'margin-bottom: 16px; cursor: pointer;';
+    classSelect.insertBefore(backBtn, classSelect.firstChild);
+  }
+}
+if (!document.getElementById('btn-start-game')) {
+  const editor = document.querySelector('.character-editor');
+  if (editor) {
+    const startBtn = document.createElement('button');
+    startBtn.id = 'btn-start-game';
+    startBtn.className = 'btn primary';
+    startBtn.textContent = 'Start Game';
+    startBtn.style.cssText = 'width: 100%; max-width: 280px; margin-top: 24px; cursor: pointer;';
+    editor.appendChild(startBtn);
+  }
+}
 // Play button
 const playBtn = document.getElementById('btn-play');
 if (playBtn) {
